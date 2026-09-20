@@ -1,7 +1,11 @@
 # AGENTS.md — Kolam Labs
 
-Source of truth for semantics: `docs/hypergraph_kolams.md`.
-Source of truth for implementation: `kolam_engine/src/` (TypeScript + Paper.js + Vite).
+Source of truth for semantics: `docs/hypergraph_kolams.md`. Read this first, follow it exactly.
+
+Current focus: data-generation pipeline + training the model (`todo.md`).
+The kolam engine / UI / slate-chalk design is archaic and out of scope — it lives
+in `archive/` (plus stale `README.md` sections describing it). Do not revive it,
+do not import from it, do not style new code to match it.
 
 ## What this project is
 
@@ -31,55 +35,33 @@ Rules:
   not part of the learned representation.
 - Ordering matters. `HORN(A → B)` ≠ `HORN(B → A)`. Cyclic order matters for `CROSSING_LOOP`.
 
-## Repo layout
+## Repo layout (current)
 
 ```text
 Kolam_labs/
 ├── AGENTS.md
 ├── README.md / todo.md / references.md
 ├── docs/hypergraph_kolams.md      # semantic spec — read this first
-├── kolam_engine/                  # ACTIVE app (Vite + TS + paper.js)
-│   ├── index.html                 # encoder page → src/main.ts
-│   ├── challenge.html             # challenge page → src/challenge.ts
-│   └── src/
-│       ├── main.ts                # encoder wiring
-│       ├── challenge.ts           # 3 levels + live WL validation + graph viz
-│       ├── modules/schema.ts      # GridConfig, LatticePoint, AnchorDot, isAnchor()
-│       ├── modules/canvas.ts      # lattice math, drawGrid, auto-fit spacing
-│       ├── modules/draw.ts        # snap-to-midpoint tool, onLive/onCommit
-│       ├── modules/decoder.ts     # decodeLive (static) + decodeLoop (animated)
-│       ├── modules/renderer.ts    # chalkStroke (seeded), board texture
-│       ├── modules/isomorphism.ts # WL certificate, areIsomorphic()
-│       ├── modules/seq-parser.ts  # textarea text → [number,number][][]
-│       ├── modules/seq-input.ts   # keystroke helper (currently UNUSED by main.ts)
-│       ├── modules/spline.ts      # legacy anchor-to-anchor demo loop
-│       ├── modules/motif.ts       # STUB (1 line) — do not import
-│       └── styles/theme.ts        # chalk color system
 ├── kolam_press/kolam_engine_demo.ipynb  # Python mirror; build_crossing_loop(n) prototype
-├── kolam_engine_v0/               # DEAD — do not touch, do not import
-└── pulli kolam encoder demo.html  # LEGACY — do not touch
+└── archive/                       # ARCHAIC — old engine, UI, slate-chalk design
+    ├── kolam_engine/              # do not touch, do not import, do not revive
+    └── pulli kolam encoder demo.html  # legacy — do not touch
 ```
 
 ## Core implementation facts (from code)
 
-- Lattice: `m × n` anchors → `(2m+1) × (2n+1)` lattice. `isAnchor(li,lj) = li%2==1 && lj%2==1`
-  (`kolam_engine/src/modules/schema.ts`). Anchor `(row,col)` → lattice `(2*row+1, 2*col+1)`.
-- Path visits midpoints, never anchors. Draw tool snaps to nearest non-anchor within
-  `spacing/2` (`draw.ts:nearest`).
-- Sequence format: ordered `[li,lj]`, strokes separated by `---`.
-  `[1,1] → [1,2] → [2,2] --- [3,1] → [3,2]`. Parser drops strokes with < 2 points
-  (`seq-parser.ts`). Token for training: `li * (2n+1) + lj`.
-- Spline: chained quadratic Bézier — `quadraticCurveTo(coords[i], mid(coords[i],coords[i+1]))`
-  (`decoder.ts:buildSplinePts`, `renderer.ts:buildPath`). Same algorithm in notebook
-  `build_chained_bezier`.
-- Chalk: point-sampled, seeded LCG so same geometry = same grain
-  (`renderer.ts:chalkStroke`, `seededRand`). Seed from first point coords.
-- Isomorphism (engine-level, NOT the hypergraph definition): undirected graph from
-  sequence → 3-round WL, `certificate()` compare (`isomorphism.ts`). Invariant to
-  position / direction / stroke order. Challenge page uses `areIsomorphic()` live.
-- Hypergraph-doc isomorphism (§6) is ordered typed hypergraph isomorphism — exact
-  vertex-mapping preserving type/arity/order/variant. WL is a practical proxy in the
-  engine, not the definition. Do not conflate the two.
+- Lattice: `m × n` anchors → `(2m+1) × (2n+1)` lattice. `isAnchor(li,lj) = li%2==1 && lj%2==1`.
+  Anchor `(row,col)` → lattice `(2*row+1, 2*col+1)`.
+- Path visits midpoints, never anchors.
+- Sequence format (compiled intermediate, not the label): ordered `[li,lj]`, strokes
+  separated by `---`. `[1,1] → [1,2] → [2,2] --- [3,1] → [3,2]`.
+  Token for training: `li * (2n+1) + lj`.
+- Spline math (reuse for the renderer, not the UI): chained quadratic Bézier —
+  `quadraticCurveTo(coords[i], mid(coords[i],coords[i+1]))`. Same algorithm in
+  notebook `build_chained_bezier`. Keep geometry deterministic.
+- Hypergraph-doc isomorphism (§6) is the definition: ordered typed hypergraph
+  isomorphism — exact vertex-mapping preserving type/arity/order/variant.
+  The old engine's WL certificate was only a practical proxy. Do not conflate the two.
 - `kolam_press` prototype: `build_crossing_loop(n_dots)` — n dots → n-1 crossings at
   `(1,2k+2)`, each visited 2× from perpendicular diagonals (forward ↘/↗, backward ↙/↖),
   closed loop. This is the reference `CROSSING_LOOP` compiler. JSON sample in last cell
@@ -87,28 +69,15 @@ Kolam_labs/
 
 ## Commands
 
-```bash
-cd kolam_engine
-npm install
-npm run dev      # encoder at /, challenge at /challenge.html
-npm run build    # tsc + vite build (base './')
-```
-
 No tests, no linter, no Python package yet. Notebook runs standalone (numpy + matplotlib).
+(The old `kolam_engine` npm app is archived — no `npm install` / `dev` / `build` workflow.)
 
 ## Conventions for edits
 
 - Docs: only `docs/hypergraph_kolams.md` is active. Don't resurrect deleted doc names
   (`NORMAL_LOOP`, `HORN_LEFT`, `HORN_RIGHT`, `dot_port_grammar_summary.md`, `ref_papers/`).
-- Code: Paper.js scopes are `any` (no TS interfaces available) — follow existing pattern.
-  Canvas sizing: never set `canvas.width/height` directly for Paper.js canvases; use
-  `scope.view.viewSize` (see `canvas.ts:sizeCanvas`). Graph-viz canvases (2D ctx) are
-  the exception — they set width/height with DPR.
-- `draw.ts` owns stroke state (`finished`, `currentPts`). `decoder.ts` owns animation
-  frame (`_animId`, `stopDecode()`). `seq-parser.ts` is the only textarea parser.
-- Touch handling in `draw.ts`/`decoder.ts` is deliberate (tap vs drag, no textarea
-  focus-steal on coarse pointers). Don't "simplify" it away.
+- Code: new generator / training code lives outside `archive/`. Never import from `archive/`.
 - When adding generator code: structure-first per hypergraph doc §5
   (grid → relations → compose → validate → compile → render). Put `CROSSING_LOOP` /
   `HORN` / `PARALLEL_LOOP` compilers where both TS engine and Python exporter can
-  share the spec — don't hardcode sequences in `challenge.ts` style for dataset output.
+  share the spec — don't hardcode sequences for dataset output.

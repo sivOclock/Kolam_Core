@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Fast Interactive Kolam Encoder</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+            background-color: #1a1a1a;
+            gap: 20px;
+        }
+
+        .main-container {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        .canvas-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .canvas-label {
+            color: #e0e0e0;
+            font-size: 1.2em;
+            font-weight: 600;
+            text-align: center;
+        }
+
+
+
+        #canvas-container {
+            position: relative;
+            width: 600px;
+            height: 600px;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            border: 2px solid #444;
+            background-color: transparent;
+        }
+
+        #background-canvas {
+            background-color: #2a2a2a;
+        }
+
+        #hover-canvas {
+            cursor: crosshair;
+            pointer-events: none;
+        }
+
+        #controls {
+            margin-left: 20px;
+            padding: 15px;
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 8px;
+            width: 250px;
+        }
+
+        h3 {
+            margin-top: 0;
+            color: #e0e0e0;
+        }
+
+        #sequence-display {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 1.1em;
+            background-color: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            min-height: 50px;
+            color: #b0b0b0;
+            margin-bottom: 15px;
+            white-space: nowrap;
+            overflow-x: auto;
+            border: 1px solid #444;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .button-group button {
+            flex-grow: 1;
+        }
+
+        .grid-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+
+        .grid-controls div {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .grid-controls label {
+            color: #e0e0e0;
+        }
+
+        .grid-controls input {
+            width: 50px;
+            padding: 8px;
+            font-size: 1em;
+            border: 1px solid #444;
+            border-radius: 4px;
+            text-align: center;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        .control-button {
+            padding: 10px;
+            font-size: 1em;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s, opacity 0.2s;
+            color: white;
+        }
+
+        .control-button:disabled {
+            background-color: #444;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        #undo-button {
+            background-color: #4a9fb5;
+        }
+
+        #undo-button:hover:not(:disabled) {
+            background-color: #3a8fa5;
+        }
+
+        #redo-button {
+            background-color: #d89d3e;
+        }
+
+        #redo-button:hover:not(:disabled) {
+            background-color: #c88d2f;
+        }
+
+        #reset-button {
+            background-color: #c9433f;
+            width: 100%;
+        }
+
+        #reset-button:hover {
+            background-color: #b9332c;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="canvas-section">
+        <div class="canvas-label">Encoder (Draw here)</div>
+        <div id="canvas-container">
+            <canvas id="background-canvas" width="600" height="600"></canvas>
+            <canvas id="drawing-canvas" width="600" height="600"></canvas>
+            <canvas id="hover-canvas" width="600" height="600"></canvas>
+        </div>
+    </div>
+
+
+
+    <div id="controls">
+        <h3>Grid Size</h3>
+        <div class="grid-controls">
+            <div>
+                <label for="rows-input">Rows:</label>
+                <input type="number" id="rows-input" min="2" max="21" value="7">
+            </div>
+            <div>
+                <label for="cols-input">Cols:</label>
+                <input type="number" id="cols-input" min="2" max="21" value="7">
+            </div>
+        </div>
+
+        <h3>Generated Sequence</h3>
+        <pre id="sequence-display"></pre>
+        <div class="button-group">
+            <button id="undo-button" class="control-button">Undo</button>
+            <button id="redo-button" class="control-button">Redo</button>
+        </div>
+        <button id="reset-button" class="control-button">Reset Drawing</button>
+    </div>
+
+    <script>
+        // --- Constants ---
+        const LATTICE_DISTANCE = 40;
+        const DOT_SPACING = LATTICE_DISTANCE * Math.sqrt(2);
+        const STRAIGHT_DISTANCE = DOT_SPACING;
+
+        // --- Canvas & DOM Setup ---
+        const bgCanvas = document.getElementById('background-canvas');
+        const drawCanvas = document.getElementById('drawing-canvas');
+        const hoverCanvas = document.getElementById('hover-canvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        const drawCtx = drawCanvas.getContext('2d');
+        const hoverCtx = hoverCanvas.getContext('2d');
+        const sequenceDisplay = document.getElementById('sequence-display');
+        const resetButton = document.getElementById('reset-button');
+        const undoButton = document.getElementById('undo-button');
+        const redoButton = document.getElementById('redo-button');
+        const canvasContainer = document.getElementById('canvas-container');
+        const rowsInput = document.getElementById('rows-input');
+        const colsInput = document.getElementById('cols-input');
+
+        // --- State Variables ---
+        let gridRows = 7;
+        let gridCols = 7;
+        let dots = [];
+        let latticePoints = [];
+        let drawnPath = [];
+        let generatedSequence = [];
+        let hoveredPoint = null;
+        let undoStack = [];
+        let redoStack = [];
+
+        // --- Core Logic ---
+        function initialize() {
+            canvasContainer.addEventListener('mousedown', handleMouseDown);
+            canvasContainer.addEventListener('mousemove', handleMouseMove);
+            canvasContainer.addEventListener('mouseleave', handleMouseLeave);
+            resetButton.addEventListener('click', reset);
+            undoButton.addEventListener('click', undo);
+            redoButton.addEventListener('click', redo);
+            rowsInput.addEventListener('input', handleGridSizeChange);
+            colsInput.addEventListener('input', handleGridSizeChange);
+            document.addEventListener('keydown', handleKeyDown);
+            reinitializeGrid();
+        }
+
+        function handleKeyDown(event) {
+            if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(); }
+            if ((event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'z') || (event.ctrlKey && event.key.toLowerCase() === 'y')) { event.preventDefault(); redo(); }
+        }
+
+        function handleGridSizeChange() {
+            const newRows = parseInt(rowsInput.value, 10);
+            const newCols = parseInt(colsInput.value, 10);
+            if (isNaN(newRows) || isNaN(newCols) || newRows < 2 || newCols < 2 || newRows > 21 || newCols > 21) return;
+            gridRows = newRows;
+            gridCols = newCols;
+            reinitializeGrid();
+        }
+
+        function reinitializeGrid() {
+            reset();
+            dots = [];
+            latticePoints = [];
+            generateGridPoints();
+            drawBackgroundLayer();
+        }
+
+        function saveState() {
+            redoStack = [];
+            undoStack.push({ path: JSON.parse(JSON.stringify(drawnPath)), sequence: [...generatedSequence] });
+            updateButtonStates();
+        }
+        function undo() {
+            if (undoStack.length <= 1) return;
+            redoStack.push(undoStack.pop());
+            const prevState = undoStack[undoStack.length - 1];
+            drawnPath = JSON.parse(JSON.stringify(prevState.path));
+            generatedSequence = [...prevState.sequence];
+            drawUserPath();
+            updateSequenceDisplay();
+            updateButtonStates();
+        }
+        function redo() {
+            if (redoStack.length === 0) return;
+            const nextState = redoStack.pop();
+            drawnPath = JSON.parse(JSON.stringify(nextState.path));
+            generatedSequence = [...nextState.sequence];
+            undoStack.push(nextState);
+            drawUserPath();
+            updateSequenceDisplay();
+            updateButtonStates();
+        }
+        function updateButtonStates() {
+            undoButton.disabled = undoStack.length <= 1;
+            redoButton.disabled = redoStack.length === 0;
+        }
+
+        function generateGridPoints() {
+            let tempLatticePoints = [];
+            dots = [];
+            const gridWidth = (gridCols - 1) * DOT_SPACING;
+            const gridHeight = (gridRows - 1) * DOT_SPACING;
+            const startX = (bgCanvas.width - gridWidth) / 2;
+            const startY = (bgCanvas.height - gridHeight) / 2;
+
+            for (let row = 0; row < gridRows; row++) {
+                for (let col = 0; col < gridCols; col++) {
+                    const dotX = startX + col * DOT_SPACING;
+                    const dotY = startY + row * DOT_SPACING;
+                    dots.push({ x: dotX, y: dotY, row, col });
+                    const halfSpacing = DOT_SPACING / 2;
+                    tempLatticePoints.push({ x: dotX, y: dotY - halfSpacing });
+                    tempLatticePoints.push({ x: dotX, y: dotY + halfSpacing });
+                    tempLatticePoints.push({ x: dotX - halfSpacing, y: dotY });
+                    tempLatticePoints.push({ x: dotX + halfSpacing, y: dotY });
+                }
+            }
+
+            latticePoints = Array.from(new Set(tempLatticePoints.map(p => JSON.stringify(p))), json => JSON.parse(json));
+
+            latticePoints.sort((a, b) => {
+                if (Math.abs(a.y - b.y) > 0.1) {
+                    return a.y - b.y;
+                }
+                return a.x - b.x;
+            });
+
+            latticePoints.forEach((p, i) => p.number = i + 1);
+        }
+
+        function drawBackgroundLayer() {
+            bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+            bgCtx.fillStyle = '#555';
+            latticePoints.forEach(p => { bgCtx.beginPath(); bgCtx.arc(p.x, p.y, 3, 0, 2 * Math.PI); bgCtx.fill(); });
+            bgCtx.fillStyle = '#e0e0e0';
+            dots.forEach(dot => { bgCtx.beginPath(); bgCtx.arc(dot.x, dot.y, 5, 0, 2 * Math.PI); bgCtx.fill(); });
+        }
+
+        function drawUserPath() {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            if (drawnPath.length < 2) {
+                if (drawnPath.length === 1) {
+                    const startPoint = drawnPath[0];
+                    drawCtx.fillStyle = '#6ba3ff';
+                    drawCtx.beginPath();
+                    drawCtx.arc(startPoint.x, startPoint.y, 5, 0, 2 * Math.PI);
+                    drawCtx.fill();
+                }
+                return;
+            }
+            drawCtx.strokeStyle = '#6ba3ff';
+            drawCtx.lineWidth = 2.5;
+            drawCtx.lineJoin = 'round';
+            drawCtx.lineCap = 'round';
+            drawCtx.beginPath();
+            const startPoint = drawnPath[0];
+            const startMid = { x: (drawnPath[0].x + drawnPath[1].x) / 2, y: (drawnPath[0].y + drawnPath[1].y) / 2 };
+            drawCtx.moveTo(startPoint.x, startPoint.y);
+            drawCtx.lineTo(startMid.x, startMid.y);
+            for (let i = 1; i < drawnPath.length - 1; i++) {
+                const p2 = drawnPath[i];
+                const p3 = drawnPath[i + 1];
+                const midNext = { x: (p2.x + p3.x) / 2, y: (p2.y + p3.y) / 2 };
+                drawCtx.quadraticCurveTo(p2.x, p2.y, midNext.x, midNext.y);
+            }
+            const lastPoint = drawnPath[drawnPath.length - 1];
+            drawCtx.lineTo(lastPoint.x, lastPoint.y);
+            drawCtx.stroke();
+        }
+
+        function drawHoverLayer() {
+            hoverCtx.clearRect(0, 0, hoverCanvas.width, hoverCanvas.height);
+
+            // --- Highlight all 8 potential next moves from the last point ---
+            if (drawnPath.length > 0) {
+                const lastPoint = drawnPath[drawnPath.length - 1];
+                const neighbors = getNeighbors(lastPoint);
+
+                hoverCtx.fillStyle = 'rgba(100, 200, 100, 0.4)'; // Subtle green for dark mode
+
+                for (const neighbor of neighbors) {
+                    if (neighbor.number !== lastPoint.number) {
+                        hoverCtx.beginPath();
+                        hoverCtx.arc(neighbor.x, neighbor.y, 9, 0, 2 * Math.PI);
+                        hoverCtx.fill();
+                    }
+                }
+            }
+
+            // Draw dashed preview line to hovered point
+            if (drawnPath.length > 0 && hoveredPoint) {
+                const lastActualPoint = drawnPath[drawnPath.length - 1];
+                if (lastActualPoint.number !== hoveredPoint.number) {
+                    const previewPathSegment = findPath(lastActualPoint, hoveredPoint);
+                    if (previewPathSegment) {
+                        const pathForPreview = [lastActualPoint, ...previewPathSegment.slice(1)];
+                        if (pathForPreview.length >= 2) {
+                            hoverCtx.strokeStyle = 'rgba(107, 163, 255, 0.6)';
+                            hoverCtx.lineWidth = 2.5;
+                            hoverCtx.setLineDash([5, 5]);
+                            hoverCtx.lineJoin = 'round';
+                            hoverCtx.lineCap = 'round';
+                            hoverCtx.beginPath();
+                            const startPoint = pathForPreview[0];
+                            const startMid = { x: (pathForPreview[0].x + pathForPreview[1].x) / 2, y: (pathForPreview[0].y + pathForPreview[1].y) / 2 };
+                            hoverCtx.moveTo(startPoint.x, startPoint.y);
+                            hoverCtx.lineTo(startMid.x, startMid.y);
+                            for (let i = 1; i < pathForPreview.length - 1; i++) {
+                                const p2 = pathForPreview[i];
+                                const p3 = pathForPreview[i + 1];
+                                const midNext = { x: (p2.x + p3.x) / 2, y: (p2.y + p3.y) / 2 };
+                                hoverCtx.quadraticCurveTo(p2.x, p2.y, midNext.x, midNext.y);
+                            }
+                            const finalPreviewPoint = pathForPreview[pathForPreview.length - 1];
+                            hoverCtx.lineTo(finalPreviewPoint.x, finalPreviewPoint.y);
+                            hoverCtx.stroke();
+                            hoverCtx.setLineDash([]);
+                        }
+                    }
+                }
+            }
+
+            // Draw highlight under the cursor
+            if (!hoveredPoint) return;
+            let isValidMove = drawnPath.length === 0 || (hoveredPoint.number !== drawnPath[drawnPath.length - 1].number);
+            hoverCtx.fillStyle = isValidMove ? 'rgba(100, 255, 100, 0.6)' : 'rgba(255, 100, 100, 0.6)';
+            hoverCtx.beginPath();
+            hoverCtx.arc(hoveredPoint.x, hoveredPoint.y, 8, 0, 2 * Math.PI);
+            hoverCtx.fill();
+        }
+
+        function handleMouseMove(event) {
+            const rect = canvasContainer.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+            hoveredPoint = getNearestLatticePoint(mouseX, mouseY);
+
+            // Calculate Preview Sequence
+            let previewSeqStr = "";
+            if (drawnPath.length > 0 && hoveredPoint) {
+                const lastPoint = drawnPath[drawnPath.length - 1];
+                if (lastPoint.number !== hoveredPoint.number) {
+                    const previewPath = findPath(lastPoint, hoveredPoint);
+                    if (previewPath && previewPath.length > 1) {
+                        // Find last owner in current sequence
+                        const lastOwner = getLastRecordedOwner(generatedSequence);
+                        const previewSeq = generateSegmentSequence(previewPath, lastOwner);
+                        previewSeqStr = previewSeq.join('');
+                    }
+                }
+            }
+            updateSequenceDisplay(previewSeqStr);
+            drawHoverLayer();
+        }
+
+        function handleMouseLeave() {
+            hoveredPoint = null;
+            updateSequenceDisplay(); // Clear preview
+            drawHoverLayer();
+        }
+
+        function handleMouseDown() {
+            if (!hoveredPoint) return;
+
+            if (drawnPath.length === 0) {
+                generatedSequence = [];
+                drawnPath.push(hoveredPoint);
+
+                // Find the nearest dot to the first clicked point
+                let closestDot = null;
+                let minDist = Infinity;
+                dots.forEach(d => {
+                    const dist = Math.hypot(d.x - hoveredPoint.x, d.y - hoveredPoint.y);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestDot = d;
+                    }
+                });
+
+                // Add the starting dot ID and side letter to the sequence
+                if (closestDot) {
+                    const dotId = (closestDot.row * gridCols) + closestDot.col + 1;
+                    generatedSequence.push(dotId);
+
+                    // Calculate which side (a/b/c/d) the clicked point is on
+                    const dx = hoveredPoint.x - closestDot.x;
+                    const dy = hoveredPoint.y - closestDot.y;
+
+                    // Use a threshold of 5 pixels to determine direction
+                    let sideLetter = '';
+                    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+                        // Point is too close to center, shouldn't happen with lattice points
+                        sideLetter = '';
+                    } else if (dx < -5 && dy < -5) {
+                        sideLetter = 'a'; // Top-Left
+                    } else if (dx > 5 && dy < -5) {
+                        sideLetter = 'b'; // Top-Right
+                    } else if (dx < -5 && dy > 5) {
+                        sideLetter = 'd'; // Bottom-Left
+                    } else if (dx > 5 && dy > 5) {
+                        sideLetter = 'c'; // Bottom-Right
+                    } else if (Math.abs(dy) < 5) {
+                        // Horizontal: left or right
+                        sideLetter = dx < 0 ? 'a' : 'b';
+                    } else if (Math.abs(dx) < 5) {
+                        // Vertical: top or bottom
+                        sideLetter = dy < 0 ? 'a' : 'd';
+                    }
+
+                    if (sideLetter) {
+                        generatedSequence.push(sideLetter);
+                    }
+                }
+
+                updateSequenceDisplay();
+                saveState();
+                drawUserPath();
+                drawHoverLayer(); // Update hover layer to show next possible moves
+                return;
+            }
+
+            const lastPoint = drawnPath[drawnPath.length - 1];
+            if (lastPoint.number === hoveredPoint.number) return;
+
+            const newPathSegment = findPath(lastPoint, hoveredPoint);
+            if (newPathSegment && newPathSegment.length > 1) {
+                const lastRecordedOwner = getLastRecordedOwner(generatedSequence);
+                const newSequence = generateSegmentSequence(newPathSegment, lastRecordedOwner);
+
+                generatedSequence.push(...newSequence);
+
+                // Append points to drawnPath (excluding first point which is duplicate of last)
+                for (let i = 1; i < newPathSegment.length; i++) {
+                    drawnPath.push(newPathSegment[i]);
+                }
+
+                updateSequenceDisplay();
+                drawUserPath();
+                saveState();
+                drawHoverLayer();
+            }
+        }
+
+        function getNearestLatticePoint(x, y) {
+            let minDistance = Infinity;
+            let closestPoint = null;
+            latticePoints.forEach(p => {
+                const dist = Math.hypot(p.x - x, p.y - y);
+                if (dist < minDistance) { minDistance = dist; closestPoint = p; }
+            });
+            return minDistance < LATTICE_DISTANCE / 2 ? closestPoint : null;
+        }
+
+        function findPath(startPoint, endPoint) {
+            // A* pathfinding to find geometrically shortest path
+            const openSet = new Set([startPoint.number]);
+            const cameFrom = new Map();
+            const gScore = new Map(); // Actual distance from start
+            const fScore = new Map(); // Estimated total distance (g + heuristic)
+
+            gScore.set(startPoint.number, 0);
+            fScore.set(startPoint.number, Math.hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y));
+
+            while (openSet.size > 0) {
+                // Find point in openSet with lowest fScore
+                let current = null;
+                let lowestF = Infinity;
+                for (const pointNum of openSet) {
+                    const f = fScore.get(pointNum) ?? Infinity;
+                    if (f < lowestF) {
+                        lowestF = f;
+                        current = latticePoints.find(p => p.number === pointNum);
+                    }
+                }
+
+                if (!current) break;
+
+                if (current.number === endPoint.number) {
+                    // Reconstruct path
+                    const path = [current];
+                    let currentNum = current.number;
+                    while (cameFrom.has(currentNum)) {
+                        currentNum = cameFrom.get(currentNum);
+                        path.unshift(latticePoints.find(p => p.number === currentNum));
+                    }
+                    return path;
+                }
+
+                openSet.delete(current.number);
+                const neighbors = getNeighbors(current);
+
+                for (const neighbor of neighbors) {
+                    const tentativeG = (gScore.get(current.number) ?? Infinity) +
+                        Math.hypot(neighbor.x - current.x, neighbor.y - current.y);
+
+                    if (tentativeG < (gScore.get(neighbor.number) ?? Infinity)) {
+                        cameFrom.set(neighbor.number, current.number);
+                        gScore.set(neighbor.number, tentativeG);
+                        fScore.set(neighbor.number, tentativeG +
+                            Math.hypot(endPoint.x - neighbor.x, endPoint.y - neighbor.y));
+                        openSet.add(neighbor.number);
+                    }
+                }
+            }
+            return null;
+        }
+
+        function getNeighbors(point) {
+            const neighbors = [];
+            for (const p of latticePoints) {
+                const dist = Math.hypot(p.x - point.x, p.y - point.y);
+                // Check for both diagonal and straight distances
+                if (Math.abs(dist - LATTICE_DISTANCE) < 1 || Math.abs(dist - STRAIGHT_DISTANCE) < 1) {
+                    neighbors.push(p);
+                }
+            }
+            return neighbors;
+        }
+
+        function decodeMove(p1, p2, ownerDot) {
+            // Calculate midpoint of segment
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+
+            // Find the closest lattice point to the midpoint
+            let closestLatticePoint = null;
+            let minDist = Infinity;
+            latticePoints.forEach(lp => {
+                const dist = Math.hypot(lp.x - midX, lp.y - midY);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestLatticePoint = lp;
+                }
+            });
+
+            if (!closestLatticePoint) return '?';
+
+            // Find which dot this lattice point belongs to
+            let nearestDot = null;
+            let minDotDist = Infinity;
+            dots.forEach(d => {
+                const dist = Math.hypot(d.x - closestLatticePoint.x, d.y - closestLatticePoint.y);
+                if (dist < minDotDist) {
+                    minDotDist = dist;
+                    nearestDot = d;
+                }
+            });
+
+            if (!nearestDot) return '?';
+
+            // Calculate the dot ID
+            const dotId = (nearestDot.row * gridCols) + nearestDot.col + 1;
+
+            // Calculate which side (a/b/c/d) the lattice point is on relative to its dot
+            const dx = closestLatticePoint.x - nearestDot.x;
+            const dy = closestLatticePoint.y - nearestDot.y;
+
+            let sideLetter = '';
+            if (dx < -5 && dy < -5) {
+                sideLetter = 'a'; // Top-Left
+            } else if (dx > 5 && dy < -5) {
+                sideLetter = 'b'; // Top-Right
+            } else if (dx < -5 && dy > 5) {
+                sideLetter = 'd'; // Bottom-Left
+            } else if (dx > 5 && dy > 5) {
+                sideLetter = 'c'; // Bottom-Right
+            } else if (Math.abs(dy) < 5) {
+                // Horizontal: left or right
+                sideLetter = dx < 0 ? 'a' : 'b';
+            } else if (Math.abs(dx) < 5) {
+                // Vertical: top or bottom
+                sideLetter = dy < 0 ? 'a' : 'd';
+            }
+
+            return sideLetter ? `${dotId}${sideLetter}` : '?';
+        }
+
+        function getSequenceString(seq) {
+            return seq.join('');
+        }
+
+        // --- Helper to get the last dot ID recorded in a sequence ---
+        function getLastRecordedOwner(seq) {
+            for (let k = seq.length - 1; k >= 0; k--) {
+                if (typeof seq[k] === 'number') {
+                    return seq[k];
+                }
+            }
+            return null;
+        }
+
+        // --- Simulates encoding for a path segment ---
+        function generateSegmentSequence(pathSegment, initialLastOwner) {
+            let tempSequence = [];
+            let currentLastOwner = initialLastOwner;
+
+            // Helper to find which dot a segment p1->p2 belongs to
+            const getSegmentOwner = (p1, p2) => {
+                const midX = (p1.x + p2.x) / 2;
+                const midY = (p1.y + p2.y) / 2;
+                let closestDot = null;
+                let minDst = Infinity;
+                dots.forEach(d => {
+                    const dst = Math.hypot(d.x - midX, d.y - midY);
+                    if (dst < minDst) {
+                        minDst = dst;
+                        closestDot = d;
+                    }
+                });
+                if (closestDot) {
+                    return { id: (closestDot.row * gridCols) + closestDot.col + 1, dot: closestDot };
+                }
+                return { id: 1, dot: dots[0] };
+            };
+
+            for (let i = 1; i < pathSegment.length; i++) {
+                const prev = pathSegment[i - 1];
+                const curr = pathSegment[i];
+                const { id: ownerId, dot: ownerDot } = getSegmentOwner(prev, curr);
+
+                if (ownerId !== currentLastOwner) {
+                    tempSequence.push(ownerId);
+                    currentLastOwner = ownerId;
+                }
+
+                const symbol = decodeMove(prev, curr, ownerDot);
+                tempSequence.push(symbol);
+            }
+            return tempSequence;
+        }
+
+
+
+        function updateSequenceDisplay(previewStr = "") {
+            const sequenceStr = generatedSequence.join('');
+            if (previewStr) {
+                sequenceDisplay.innerHTML = `<span style="color: #b0b0b0">${sequenceStr}</span><span style="color: #6ba3ff">${previewStr}</span>`;
+            } else {
+                sequenceDisplay.textContent = sequenceStr;
+            }
+        }
+
+
+
+        function reset() {
+            drawnPath = [];
+            generatedSequence = [];
+            undoStack = [];
+            redoStack = [];
+            updateSequenceDisplay();
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            hoverCtx.clearRect(0, 0, hoverCanvas.width, hoverCanvas.height);
+            saveState();
+        }
+
+        initialize();
+    </script>
+</body>
+
+</html>
