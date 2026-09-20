@@ -22,25 +22,23 @@ V = {A, B, C, D, ...}
 
 ## 2. Typed Ordered Relations
 
+There are exactly **3 relation types**: `HORN`, `CROSSING_LOOP`, and `PARALLEL_LOOP`.
+
 Each relation connects one or more anchor vertices and has a specific type:
 
 ```text
 HORN(A → B)
 
-HORN_LEFT(A → B)
-
-HORN_RIGHT(A → B)
-
-NORMAL_LOOP([A, B, C, D])
+CROSSING_LOOP([A, B, C, D])
 
 PARALLEL_LOOP([A, B, C, D])
 ```
 
 ### Horn Relations
 
-Horn relations involve exactly **2 vertices**.
-
-There are three horn variations:
+- Form **1 of 3**: `HORN`.
+- Horn relations involve exactly **2 vertices**.
+- There are three horn variants — `PLAIN_HORN`, `LEFT_HORN`, `RIGHT_HORN` — all of type `HORN`:
 
 | Variant | Notation |
 |---|---|
@@ -54,21 +52,22 @@ The vertex **ordering matters** because the horn has a specific orientation and 
 
 ---
 
-### Normal Loop
+### Crossing Loop
 
+- Form **2 of 3**: `CROSSING_LOOP`.
 - Connects **multiple vertices**.
 - Vertices are stored in **cyclic order**.
 - The cyclic ordering determines how the loop is constructed.
 
 ```text
-NORMAL_LOOP([A, B, C, D])
+CROSSING_LOOP([A, B, C, D])
 ```
 
 ---
 
 ### Parallel Loop
 
-- Connects **multiple vertices**.
+- Form **3 of 3**: `PARALLEL_LOOP`.
 - Vertices are stored in the required **structural order**.
 - The ordering determines the parallel-loop construction.
 
@@ -87,7 +86,7 @@ H = {
     vertices: [A, B, C, D, ...],
 
     relations: [
-        NORMAL_LOOP([A, B, C, D]),
+        CROSSING_LOOP([A, B, C, D]),
         LEFT_HORN(A → E),
         RIGHT_HORN(C → F),
         PARALLEL_LOOP([A, C, G, H])
@@ -161,11 +160,12 @@ Each training sample contains:
     "vertices": ["A", "B", "C", "D", "E"],
     "relations": [
       {
-        "type": "NORMAL_LOOP",
+        "type": "CROSSING_LOOP",
         "vertices": ["A", "B", "C", "D"]
       },
       {
-        "type": "LEFT_HORN",
+        "type": "HORN",
+        "variant": "LEFT_HORN",
         "vertices": ["A", "E"]
       }
     ]
@@ -184,10 +184,10 @@ Two Kolams are equivalent when there exists a mapping between their vertices tha
 | Property | Description |
 |---|---|
 | Vertex correspondence | Bijective vertex mapping |
-| Relation type | `NORMAL_LOOP`, `PARALLEL_LOOP`, `PLAIN_HORN`, etc. |
+| Relation type | `CROSSING_LOOP`, `PARALLEL_LOOP`, `HORN` (variants `PLAIN_HORN`, `LEFT_HORN`, `RIGHT_HORN`) |
 | Relation arity | Same number of vertices per relation |
 | Ordering | Vertex sequence within each relation |
-| Cyclic ordering | Where applicable (e.g., `NORMAL_LOOP`) |
+| Cyclic ordering | Where applicable (e.g., `CROSSING_LOOP`) |
 | Horn variation | `PLAIN_HORN`, `LEFT_HORN`, or `RIGHT_HORN` |
 
 > WL certificates are **not required** as the definition of equivalence. Exact ordered-hypergraph isomorphism is the structural comparison.
