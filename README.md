@@ -1,91 +1,121 @@
 # Kolam Labs
 
-**Goal:** Build a dataset of kolam patterns and train an image-to-sequence model that can read a kolam image and output its structural encoding.
+**Goal:** build a dataset of kolam images, then train a model that reads a kolam image and
+outputs its structure as an **ordered typed hypergraph** (`docs/hypergraph_kolams.md`).
 
-🎨 **[Try the live Kolam Engine →](https://techonebytwo.com/siv4kumaru/kolam_labs/challenge.html)**
-
-## What is a Kolam?
-
-A kolam is a closed loop drawn around a grid of anchor dots on a `(2m+1) × (2n+1)` lattice. Each curve segment is a quadratic Bézier spline — smooth, continuous, no sharp corners. The pattern can be fully described as an ordered sequence of lattice point coordinates.
-
-## The Pipeline
-
-```
-Canvas Encoder  →  Sequence  →  Isomorphism Validator  →  Training Data  →  Image-to-Seq Model
+```text
+brush program  →  ordered hypergraph  →  gate compiler  →  lattice strokes  →  renderer  →  image
+c(...) p(...) h(...)    (exact label)        (§8)          [li,lj] … ---       chained Bézier
 ```
 
-## Project Structure
+Every image is generated from its label, so every label is exact.
 
-```
-kolam_Labs/
-├── kolam_engine/           # Interactive encoder + challenge app (TypeScript + Paper.js)
-│   ├── src/
-│   │   ├── main.ts          # Encoder page
-│   │   ├── challenge.ts     # Challenge page
-│   │   └── modules/
-│   │       ├── canvas.ts        # Grid math, rendering, layout
-│   │       ├── draw.ts          # Paper.js drawing tool with snapping
-│   │       ├── decoder.ts       # Animated chalk trace + sequence highlighting
-│   │       ├── isomorphism.ts   # WL graph certificate for pattern matching
-│   │       ├── seq-parser.ts    # Parse [li,lj] sequence text
-│   │       └── renderer.ts      # Chalk brush renderer
-├── docs/
-│   ├── foundation.md            # Lattice spec, spline definition, isomorphism theory
-│   ├── graph_theory_for_kolam_grammar.md
-│   └── dot_port_grammar_summary.md
-└── ref_papers/              # Local reference PDFs (not tracked)
-```
+## The three brushes
 
-## Running Locally
+You draw a kolam the way you would with three brushes, through the dots of a grid
+(`[row, col]`, 0-indexed):
+
+| brush | call | what it draws |
+|---|---|---|
+| `CROSSING_LOOP` | `c([0,0],[0,4])` | a chain of dots; the line **crosses** (✕) in every gap along the chain |
+| `PARALLEL_LOOP` | `p([2,0],[2,2],[4,2])` | a chain of dots; the strands run **parallel** around them, with no crossings |
+| `HORN` | `h(A,B)` · `hl(A,B)` · `hr(A,B)` | grows from A around B into a sharp tip: plain / curling left / curling right (aliases `h0` `h1` `h2`) |
+
+Waypoints on the same row or column are filled in. Repeat the first dot to close a ring:
+`c([1,1],[1,3],[3,3],[3,1],[1,1])`.
 
 ```bash
-cd kolam_engine
-npm install
-npm run dev
+pip install -r requirements.txt
+python -m kolam_press draw "c([0,0],[0,3]); p([1,0],[1,3]); hl([2,1],[2,2])" -o kolam.png
+python -m kolam_press draw -f examples/flower.kolam -o flower.png --view panel --seq
 ```
 
-## Pages
+![brush program | kolam coloured by brush | training image](docs/results/examples.jpg)
 
-**Encoder** (`/`) — Draw kolam patterns on the left canvas. The sequence of lattice coordinates appears in the middle panel live as you draw. The right canvas decodes and animates the path in blue chalk. Sequence is editable — paste or type `[li,lj]` coordinates directly.
+How it works, from hypergraph doc §8:
+- Each brush only sets the state of the gaps between neighbouring dots: `CROSS`, `JOIN`
+  or `SPLIT`.
+- The curve is traced from gate to gate (the Gerdes / Nagata mirror-curve model).
+- A horn swaps one rounded turn for a sharp tip template.
 
-**Challenge** (`/challenge.html`) — A target kolam is shown on the left. Draw it on the right. The bottom row shows both graph signatures (WL certificate visualized as a node graph) updating live. Status shows ✓ Correct / ✗ Not yet in real time.
+A crossing brush along a row reproduces the notebook's `build_crossing_loop(n)` exactly.
 
-## Sequence Format
+## Generating data
 
+```bash
+python -m kolam_press generate -n 3000 -o data/kolams_v1 --preview 16
+python -m kolam_press evaluate data/kolams_v1       # writes report.md, exits 1 on any failure
+python -m kolam_press gallery  data/kolams_v1 -o gallery.png
 ```
-[1,1] → [1,2] → [2,2] → [2,1] → [1,1]
----
-[3,1] → [3,2] → [4,2]
+
+The generator works structure first:
+1. Pick a grid (3–8 dots a side) and a symmetry (none, mirror, 180° turn, D2, C4 or D4).
+2. Lay random brush strokes with their symmetric copies, keeping only valid ones.
+3. In about 40% of kolams (tree mode), grow the brush lines as a tree, which gives
+   single-stroke kolams.
+4. Cover leftover dots by extending chains or adding horns.
+5. Compile, check the geometry, render with a random look (chalk, ink or colour; line
+   width, dots, blur, noise, hand jitter), and re-draw any duplicate.
+
+Each line of `labels.jsonl` holds:
+- the image path;
+- `program`, the canonical brush program;
+- `hypergraph`, the label in the spec JSON format;
+- `lattice_sequence`, the compiled strokes;
+- stats and the render style.
+
+![36 generated training images](docs/results/gallery.jpg)
+
+## Is the data good? (3000-sample run, `docs/results/report.md`)
+
+Every sample is re-checked from its label alone, independently of the generator:
+
+| check (all 3000 samples) | failures |
+|---|---|
+| label valid and canonical; its brush program re-parses to the same label | 0 |
+| recompiling the label reproduces the stored lattice sequence | 0 |
+| geometry (see below) | 0 |
+| the gate states + horn tips visible in the drawing decode back to the exact label | 0 |
+| a sample of 200 images re-renders byte-identically from (label, style) | 0 |
+| different labels that give the same picture | 0 |
+| tree-shaped brush lines give one stroke per tree (§8.6; 2350 such kolams) | 0 |
+
+The geometry check requires that:
+- curves stay ≥ 0.44 from every dot;
+- strands stay ≥ 0.23 apart except at their crossings (dots are 2 apart);
+- every crossing gap shows exactly one ✕;
+- the only corners are horn tips.
+
+**Diversity**
+- 3000 / 3000 unique labels; 2841 isomorphism classes (§6).
+- Grids: all 36 shapes from 3×3 to 8×8, plus a few cropped smaller ones.
+- 7 symmetry types; 29% single-stroke; 55% use all three brushes.
+- 800 closed rings.
+- Horns: 6132 plain, 5023 left, 5214 right.
+- 2134 dark-background images, 866 light.
+
+**Labels are readable from pixels.** A tiny MLP probe reading a 9×9 grid of ink samples around each gap (trained on
+1050 images, tested on 450; grid position given) gets:
+- 99.87% of gaps (crossing / parallel / split / tip) right;
+- 99.995% of horn-tip centres right;
+- the whole hypergraph exact on 92.9% of kolams.
+
+Its misses are spread evenly across resolutions and styles. They are small
+rounded-versus-pointed differences that a real CNN should resolve. Full report:
+`docs/results/report.md`; more previews: `docs/results/dataset_previews.jpg`.
+
+## Layout
+
+```text
+kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · evaluate
+examples/      brush programs (showcase, flower, one_stroke)
+tests/         pytest: notebook equivalence, mirror ↔ left/right on pixels, DSL, decode, determinism
+docs/          hypergraph_kolams.md (spec, §8 = brushes) · references.md · results/
+archive/       old TypeScript engine/UI — archived, not used
 ```
 
-Each `[li,lj]` is a lattice point coordinate. `---` separates strokes. For model training, tokenized as `row * (2n+1) + col`.
+## Next
 
-## Isomorphism
-
-Two sequences are structurally isomorphic if their **Weisfeiler-Leman graph certificates** match — position, direction, and stroke order invariant. See `docs/foundation.md` for full theory.
-
-## Roadmap
-
-**Phase 1 — Canvas Engine** ✅
-- [x] Smooth Bézier spline rendering with chalk effect
-- [x] Live sequence output and animated decoder
-- [x] Editable sequence textarea with real-time rendering
-
-**Phase 2 — Isomorphic Validator** ✅
-- [x] WL graph certificate (position, direction, stroke-order invariant)
-- [x] Canonical sequence normalization via WL certificate
-- [x] Challenge mode with live graph signature visualization
-- [x] Multi-stroke isomorphism validation
-
-**Phase 3 — vLLM Baseline & Kolam Harness**
-- [ ] Prompt engineering: image + grid spec → sequence (zero-shot / few-shot)
-- [ ] Kolam evaluation harness: run model output through WL isomorphism checker
-- [ ] Baseline accuracy benchmarks across challenge levels
-
-**Phase 4 — Training Data Generation**
-- [ ] L-system inspired synthetic generator
-- [ ] Data augmentation pipeline
-
-**Phase 5 — Image-to-Sequence Model**
-- [ ] Fine-tune vision-language model (image → lattice sequence)
-- [ ] Model deployment
+- Train the image → hypergraph model on this data. A good first target is the brush
+  program text (`labels.jsonl:program`).
+- Run a VLM baseline against the same evaluator.

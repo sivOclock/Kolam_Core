@@ -24,6 +24,7 @@ from PIL import Image
 
 from .compiler import compile_hypergraph, decode, observe
 from .dsl import parse
+from .generator import brush_line_components
 from .geometry import check_geometry
 from .hypergraph import Hypergraph, is_isomorphic, iso_hash
 from .render import Style, render_kolam
@@ -247,6 +248,11 @@ def evaluate(dataset: str | Path, probe: bool = True, probe_n: int = 1500, reren
             fail("geometry", rec, "; ".join(g["issues"]))
         min_dot = min(min_dot, g["min_dot_clearance"])
         min_strand = min(min_strand, g["min_strand_clearance"])
+        forest, pieces = brush_line_components(h.relations)
+        if forest:
+            stats["forest_kolams"] += 1
+            if g["n_strokes"] != pieces:
+                fail("stroke_count_theorem", rec, f"{g['n_strokes']} strokes for {pieces} tree(s)")
         gates, tips = observe(c.config)
         try:
             if decode(h.rows, h.cols, gates, tips) != h:
@@ -308,7 +314,8 @@ def evaluate(dataset: str | Path, probe: bool = True, probe_n: int = 1500, reren
         "dataset": str(dataset), "samples": N,
         "checks": {k: {"failures": fails.get(k, 0), "example": examples.get(k)} for k in
                    ("structure_invalid", "not_canonical", "program_mismatch", "compile_not_deterministic",
-                    "geometry", "decode_mismatch", "render_not_deterministic")},
+                    "geometry", "decode_mismatch", "render_not_deterministic", "stroke_count_theorem")},
+        "forest_kolams_checked": stats["forest_kolams"],
         "rerendered_images": min(rerender_n, N),
         "label_to_image_collisions": collisions,
         "unique_labels": len(canon_hashes), "duplicate_label_samples": N - len(canon_hashes),
@@ -345,6 +352,8 @@ def report_markdown(r: dict) -> str:
         L.append(f"| {k} | {v['failures']} |")
     L += ["", f"- re-rendered byte-identical: {r['rerendered_images']} images checked",
           f"- different labels with identical pictures: **{r['label_to_image_collisions']}**",
+          f"- stroke_count_theorem: tree-shaped brush lines give one stroke per tree, checked on "
+          f"{r['forest_kolams_checked']} kolams",
           f"- min dot clearance {r['min_dot_clearance']} / min strand clearance {r['min_strand_clearance']} "
           "(lattice units; dots are 2 apart)", "",
           "## Diversity", "",

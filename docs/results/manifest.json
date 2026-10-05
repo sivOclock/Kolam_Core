@@ -1,0 +1,42 @@
+{
+  "n": 3000,
+  "seed": 2026,
+  "unique": true,
+  "redrawn_duplicates": 226,
+  "config": {
+    "min_size": 3,
+    "max_size": 8,
+    "square_prob": 0.5,
+    "symmetry": {
+      "none": 0.25,
+      "mirror_lr": 0.15,
+      "mirror_ud": 0.1,
+      "rot180": 0.1,
+      "d2": 0.2,
+      "c4": 0.1,
+      "d4": 0.1
+    },
+    "brush_weights": {
+      "CROSSING_LOOP": 0.4,
+      "PARALLEL_LOOP": 0.3,
+      "HORN": 0.3
+    },
+    "tree_prob": 0.4,
+    "pure_prob": 0.15,
+    "ring_prob": 0.15,
+    "mix_prob": 0.3,
+    "straight_bias": 0.65,
+    "max_chain": 8,
+    "coverage": [
+      0.7,
+      1.0
+    ],
+    "fill_prob": 0.85,
+    "crop_prob": 0.85,
+    "max_proposals": 300,
+    "image_size": 384,
+    "augment": true
+  },
+  "seconds": 134.73,
+  "brushes": "kolam_press/brushes.json"
+}
