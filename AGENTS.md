@@ -40,9 +40,20 @@ Rules:
 ```text
 Kolam_labs/
 ├── AGENTS.md
-├── README.md / todo.md / references.md
-├── docs/hypergraph_kolams.md      # semantic spec — read this first
-├── kolam_press/kolam_engine_demo.ipynb  # Python mirror; build_crossing_loop(n) prototype
+├── README.md / todo.md
+├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 = brush compiler)
+├── docs/references.md
+├── docs/results/                  # gallery + evaluation report of the current generator
+├── kolam_press/                   # data generator (Python package)
+│   ├── brushes.json               # shared brush spec: gate states + horn tip templates
+│   ├── spec.py / hypergraph.py    # lattice helpers; labels, validation, isomorphism
+│   ├── dsl.py                     # brush DSL: c(...), p(...), h/hl/hr(...)
+│   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
+│   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
+│   ├── generator.py / evaluate.py # random symmetric kolams; dataset checks + pixel probe
+│   └── kolam_engine_demo.ipynb    # original crossing-loop research (reference for tests)
+├── examples/*.kolam               # brush programs
+├── tests/                         # pytest
 └── archive/                       # ARCHAIC — old engine, UI, slate-chalk design
     ├── kolam_engine/              # do not touch, do not import, do not revive
     └── pulli kolam encoder demo.html  # legacy — do not touch
@@ -62,14 +73,22 @@ Kolam_labs/
 - Hypergraph-doc isomorphism (§6) is the definition: ordered typed hypergraph
   isomorphism — exact vertex-mapping preserving type/arity/order/variant.
   The old engine's WL certificate was only a practical proxy. Do not conflate the two.
-- `kolam_press` prototype: `build_crossing_loop(n_dots)` — n dots → n-1 crossings at
+- `kolam_press/compiler.py` is the relation compiler (gate model, hypergraph doc §8). One
+  `CROSSING_LOOP` along a row must keep reproducing the notebook's `build_crossing_loop(n)`.
+- Notebook prototype: `build_crossing_loop(n_dots)` — n dots → n-1 crossings at
   `(1,2k+2)`, each visited 2× from perpendicular diagonals (forward ↘/↗, backward ↙/↖),
   closed loop. This is the reference `CROSSING_LOOP` compiler. JSON sample in last cell
   uses `{"type":"CROSSING_LOOP",...}`.
 
 ## Commands
 
-No tests, no linter, no Python package yet. Notebook runs standalone (numpy + matplotlib).
+```bash
+pip install -r requirements.txt                       # numpy, pillow, pytest
+python -m pytest tests -q                             # must stay green
+python -m kolam_press draw -f examples/showcase.kolam -o out.png --view panel
+python -m kolam_press generate -n 3000 -o data/kolams_v1 --preview 16   # data/ is gitignored
+python -m kolam_press evaluate data/kolams_v1         # writes report.md; exit 1 on any failure
+```
 (The old `kolam_engine` npm app is archived — no `npm install` / `dev` / `build` workflow.)
 
 ## Conventions for edits

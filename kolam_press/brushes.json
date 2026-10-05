@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "about": "Shared brush spec for the kolam compiler (see docs/hypergraph_kolams.md §8). Language-neutral so a TS port can load the same file.",
+
+  "lattice": {
+    "anchor_to_lattice": "(row, col) -> (2*row+1, 2*col+1)",
+    "gate": "lattice point with exactly one odd coordinate: the gap between two 4-adjacent dots, or between a dot and the border",
+    "h_gate": "odd row, even col: dots left/right of it",
+    "v_gate": "even row, odd col: dots above/below it",
+    "center": "even row, even col: empty space between 4 dots; the curve never visits it except at a horn tip"
+  },
+
+  "gate_states": {
+    "about": "The curve moves diagonally (dr, dc) = (+-1, +-1) from gate to gate. At each gate the state decides the outgoing direction. Unassigned gates and border gates are SPLIT.",
+    "CROSS": { "h_gate": [1, 1],  "v_gate": [1, 1],  "meaning": "strands pass straight through: an X crossing" },
+    "JOIN":  { "h_gate": [-1, 1], "v_gate": [1, -1], "meaning": "mirror along the dot-dot line: strands run parallel around both dots" },
+    "SPLIT": { "h_gate": [1, -1], "v_gate": [-1, 1], "meaning": "wall between the dots: each strand turns back around its own dot" }
+  },
+
+  "relations": {
+    "CROSSING_LOOP": { "gate_state": "CROSS", "min_vertices": 2, "order": "chain of 4-adjacent dots; repeat the first vertex at the end of a DSL call for a closed ring" },
+    "PARALLEL_LOOP": { "gate_state": "JOIN",  "min_vertices": 2, "order": "chain of 4-adjacent dots; repeat the first vertex at the end of a DSL call for a closed ring" },
+    "HORN": {
+      "gate_state": "JOIN",
+      "arity": 2,
+      "order": "HORN(A -> B): A is the base, B is the tip dot (4-adjacent to A, used by no other relation)",
+      "tip_frame": "local frame at B's lattice point: fwd = B - A (unit), left = rotate fwd 90deg counter-clockwise on screen = (-fwd.c, fwd.r)",
+      "tip_templates": {
+        "about": "control points [fwd, left] that replace B's far-side gate (fwd=1, left=0) in the traced sequence; a repeated point is a sharp tip",
+        "PLAIN_HORN": [[1, 0], [1, 0]],
+        "LEFT_HORN":  [[1, 1], [1, 1]],
+        "RIGHT_HORN": [[1, -1], [1, -1]]
+      }
+    }
+  },
+
+  "dsl": {
+    "c": "CROSSING_LOOP", "cross": "CROSSING_LOOP", "CROSSING_LOOP": "CROSSING_LOOP",
+    "p": "PARALLEL_LOOP", "par": "PARALLEL_LOOP", "PARALLEL_LOOP": "PARALLEL_LOOP",
+    "h": "PLAIN_HORN", "h0": "PLAIN_HORN", "hp": "PLAIN_HORN", "HORN": "PLAIN_HORN", "PLAIN_HORN": "PLAIN_HORN",
+    "h1": "LEFT_HORN", "hl": "LEFT_HORN", "LEFT_HORN": "LEFT_HORN",
+    "h2": "RIGHT_HORN", "hr": "RIGHT_HORN", "RIGHT_HORN": "RIGHT_HORN"
+  }
+}
