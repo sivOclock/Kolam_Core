@@ -9,7 +9,7 @@ the curve travels diagonally from gate to gate; each gate is CROSS, JOIN or SPLI
     HORN(A -> B)   -> JOIN  on the A-B gap + a tip template replacing B's far-side turn
 
 Every trace is a closed stroke; `build_crossing_loop(n)` from the notebook is
-exactly the trace of one CROSSING_LOOP along a row (tests/test_compiler.py).
+exactly the trace of one CROSSING_LOOP along a row (tests/test_kolam_press.py).
 """
 from __future__ import annotations
 
@@ -60,17 +60,6 @@ class Compiled:
 
     def sequence_text(self) -> str:
         return "\n---\n".join(" → ".join(f"[{a},{b}]" for a, b in s + s[:1]) for s in self.strokes)
-
-    def tokens(self) -> list[int]:
-        """Token per lattice point: li*(2n+1)+lj; strokes separated by SEP=(2m+1)*(2n+1)."""
-        w = 2 * self.config.cols + 1
-        sep = (2 * self.config.rows + 1) * w
-        out: list[int] = []
-        for i, s in enumerate(self.strokes):
-            if i:
-                out.append(sep)
-            out += [a * w + b for a, b in s + s[:1]]
-        return out
 
 
 def build_config(h: Hypergraph) -> Config:

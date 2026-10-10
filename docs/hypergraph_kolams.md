@@ -233,6 +233,14 @@ compiler in §4 is exact. The shared, language-neutral spec is
 - The curve moves diagonally `(±1, ±1)` from gate to gate. It never visits an anchor,
   and it visits a centre only at a horn tip.
 
+```text
+  ·   g   ·   g   ·        • = anchor dot  (odd, odd)
+  g   •   g   •   g        g = gate        (exactly one odd coordinate)
+  ·   g   ·   g   ·        · = centre      (even, even)
+  g   •   g   •   g
+  ·   g   ·   g   ·
+```
+
 ### 8.2 Gate states
 
 Each gate is in one of three states. Unassigned gates and border gates are `SPLIT`.
@@ -242,6 +250,20 @@ Each gate is in one of three states. Unassigned gates and border gates are `SPLI
 | `CROSS` | strands pass straight through → an ✕ | `CROSSING_LOOP` |
 | `JOIN` | mirror along the dot–dot line → strands run parallel around both dots | `PARALLEL_LOOP`, `HORN` |
 | `SPLIT` | wall between the dots → each strand turns back around its own dot | default |
+
+```text
+     CROSS             JOIN              SPLIT
+   •  ╲╱  •         • ‾‾‾‾‾ •          • ) ( •
+      ╱╲              _____
+  pass straight     bounce off the     bounce off a wall
+  through: an ✕     dot–dot line       between the dots
+```
+
+In `brushes.json` each state is a sign flip `(fr, fc)` applied to the incoming
+direction `(dr, dc)`, given separately for horizontal gates (dots left/right) and
+vertical gates (dots above/below). An untouched dot is surrounded by four `SPLIT`
+gates, so it traces a small circle; `compiler.trace` drops those, leaving bare dots
+bare.
 
 Every trace closes, so a kolam is always a set of closed strokes. This is the
 mirror-curve / N-line / gating model of refs [2] and [4]. One `CROSSING_LOOP` along a
@@ -268,14 +290,14 @@ row reproduces the notebook's `build_crossing_loop(n)` exactly (tested for n = 2
 
 ### 8.4 Composition rules (what makes a label valid and unique)
 
-1. Loops have ≥ 2 dots. A closed ring needs ≥ 4 dots, with the last dot next to the first.
-2. Consecutive dots must be 4-neighbours, because diagonal gaps have no gate. The DSL
-   fills in the dots between waypoints on the same row or column.
-3. Each gap is set by at most one relation.
-4. Loops of the same brush never share a dot. Crossing and parallel loops may share
-   dots.
-5. A horn's tip dot `B` belongs to that horn only.
-6. Horn tips are more than 1 lattice unit apart.
+| # | rule | why |
+|---|---|---|
+| 1 | Loops have ≥ 2 dots. A closed ring needs ≥ 4 dots, with the last dot next to the first. | the smallest cycle of 4-neighbours is a 2×2 square |
+| 2 | Consecutive dots are 4-neighbours. The DSL fills in the dots between waypoints on the same row or column. | diagonal dots have no gate between them |
+| 3 | Each gap is set by at most one relation. | a gate holds exactly one state |
+| 4 | Loops of the same brush never share a dot. Crossing and parallel loops may share dots. | two same-brush chains through one dot would branch there, and the picture could not say which chain is which; different brushes stay distinguishable by their gate states |
+| 5 | A horn's tip dot `B` belongs to that horn only. | the tip must identify its horn when decoding |
+| 6 | Horn tips are more than 1 lattice unit apart. | a plain tip beside a curled tip leaves strands < 0.2 apart |
 
 Under these rules the gate states and tips visible in a drawing decode back to exactly
 one canonical hypergraph (`compiler.decode`). The generator also checks every sample
@@ -300,5 +322,101 @@ geometrically (`geometry.check_geometry`):
 If the brush lines (consecutive-dot links of all relations) form a **forest**, each
 tree compiles to exactly **one** closed stroke, for any mix of `CROSS` and `JOIN`. The
 reason: each new link joins the two separate curves that run beside its gap. A tree of
-brush lines is therefore a single-stroke kolam. This was checked on every forest-shaped
-sample generated.
+brush lines is therefore a single-stroke kolam. Conversely, a link that closes a cycle
+in the brush lines splits a curve in two, which is why a closed ring gives two
+strokes. This was checked on every forest-shaped sample generated.
+
+### 8.7 How brushes combine
+
+Brushes never interact directly. Each one only writes gate states (plus, for a horn,
+one tip), and the curve is traced once over the whole grid. There is no special case
+for any pair of brushes: where two strokes meet, the picture is decided by the gate
+states alone, and the only place two strands intersect is a `CROSS` gate.
+
+Brushes meet at **dots**, never at gaps (rule 3). A dot has four gaps; different
+brushes may own different gaps of the same dot, and the curve weaves through all of
+them. Compiler output on a 3×3 grid:
+
+| program | gates set | strokes | ✕ |
+|---|---|---|---|
+| `c([0,0],[0,2])` | 2 `CROSS` | 1 | 2 |
+| `p([0,0],[0,2])` | 2 `JOIN` | 1 | 0 |
+| `c([0,0],[0,2]); p([0,1],[2,1])` (share dot `[0,1]`) | 2 `CROSS` + 2 `JOIN` | 1 | 2 |
+| … `+ hl([2,1],[2,2])` | + 1 `JOIN` + tip at centre `(4,6)` | 1 | 2 |
+| `c([0,0],[0,2]); p([1,0],[1,2])` (no shared dot) | 2 `CROSS` + 2 `JOIN` | 2 | 2 |
+| `c([0,0],[0,1],[1,1],[1,0],[0,0])` (ring) | 4 `CROSS` | 2 | 4 |
+
+The stroke counts follow §8.6: the shared-dot kolams are one tree, the two separate
+rows are two trees, and the ring is a cycle.
+
+### 8.8 Decoding
+
+Because everything visible lives in gate states and tip positions, a drawing decodes
+back to its label (`compiler.decode`; the evaluator runs it on every sample):
+
+1. **Horns first.** Each tip sits beside its dot `B`. `B` has exactly one `JOIN` gate
+   (rule 5), whose other dot is the base `A`. The tip's offset in `B`'s frame
+   (`fwd`, `fwd + left`, `fwd − left`) gives `PLAIN_HORN`, `LEFT_HORN` or `RIGHT_HORN`.
+2. **Loops.** The remaining `CROSS` gates, grouped into connected chains of dots, are
+   the crossing loops; the remaining `JOIN` chains are the parallel loops. A chain
+   with no ends is a closed ring. A branching chain is an error, which rule 4 rules out.
+3. The result is put in canonical form (§8.5).
+
+## 9. Brush DSL and label JSON (`kolam_press/dsl.py`, `hypergraph.py`)
+
+The hypergraph is the label; the brush DSL is a compact text form of the same thing,
+and the natural output for a sequence model (about 6× shorter than the JSON).
+
+```text
+                 dsl.parse            compiler          render
+  brush program ──────────▶ Hypergraph ───────▶ strokes ──────▶ image
+                ◀──────────  (label)
+              dsl.format_program
+```
+
+### 9.1 DSL syntax
+
+```text
+grid(5, 5)                          # optional; else the smallest grid that fits
+c([0,0],[0,2])                      # CROSSING_LOOP through [0,0] [0,1] [0,2]
+p([0,1],[2,1])                      # PARALLEL_LOOP, sharing dot [0,1] with the crossing loop
+c([2,2],[2,4],[4,4],[4,2],[2,2])    # waypoints turn corners; repeat the first dot to close a ring
+h([1,3],[0,3])                      # PLAIN_HORN base -> tip  (aliases h0, hp)
+hl([1,0],[2,0])                     # LEFT_HORN               (alias h1)
+hr([3,1],[3,0])                     # RIGHT_HORN              (alias h2)
+```
+
+- Dots are `[row, col]`, 0-indexed. Statements are separated by newlines or `;`;
+  `#` starts a comment.
+- Consecutive loop waypoints share a row or column; the dots in between are filled in.
+- `parse` returns a canonical, validated hypergraph, or raises `KolamError` with the
+  line and the broken rule (e.g. "is diagonal; brushes run along rows/columns").
+- `format_program` writes the canonical program, collapsing straight runs to their
+  endpoints and corners. `parse(format_program(h)) == h` for every label.
+
+### 9.2 Label JSON
+
+`labels.jsonl` stores `program` (canonical DSL) and `hypergraph` (this JSON) for every
+image. The program `c([0,0],[0,2]); hl([1,1],[2,1])` on a 3×3 grid is:
+
+```json
+{"grid": {"rows": 3, "cols": 3},
+ "vertices": [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0],[2,1],[2,2]],
+ "relations": [
+   {"type": "CROSSING_LOOP", "vertices": [[0,0],[0,1],[0,2]]},
+   {"type": "HORN", "variant": "LEFT_HORN", "vertices": [[1,1],[2,1]]}
+ ]}
+```
+
+A closed ring adds `"closed": true`. Relations are sorted (crossing loops, parallel
+loops, horns), so equal kolams give byte-equal labels.
+
+### 9.3 What `hypergraph.py` provides
+
+| function | job | used by |
+|---|---|---|
+| `Relation.canonical`, `Hypergraph.canonical` | one label per picture (§8.5) | everything |
+| `validate` | the composition rules of §8.4 | DSL, generator, evaluator |
+| `transform_relation` | mirror / rotate a relation; reflections swap `LEFT_HORN` ↔ `RIGHT_HORN` | symmetric generation |
+| `is_isomorphic`, `iso_hash` | exact §6 isomorphism, with a cheap pre-bucketing hash | diversity report, model scoring |
+| `to_json`, `from_json` | the label format above | dataset I/O |

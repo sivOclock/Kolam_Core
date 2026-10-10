@@ -55,7 +55,7 @@ def _generate(a):
 
 
 def _evaluate(a):
-    r = evaluate(a.dataset, probe=not a.no_probe, probe_n=a.probe_n)
+    r = evaluate(a.dataset)
     print((Path(a.dataset) / "report.md").read_text())
     bad = sum(v["failures"] for v in r["checks"].values()) + r["label_to_image_collisions"]
     sys.exit(1 if bad else 0)
@@ -99,8 +99,6 @@ def main(argv=None):
     g.set_defaults(fn=_generate)
     e = sub.add_parser("evaluate", help="check a dataset and write report.md")
     e.add_argument("dataset")
-    e.add_argument("--no-probe", action="store_true")
-    e.add_argument("--probe-n", type=int, default=1500)
     e.set_defaults(fn=_evaluate)
     s = sub.add_parser("gallery", help="contact sheet of training images")
     s.add_argument("dataset")

@@ -10,26 +10,32 @@ from kolam_press.generator import GenConfig, brush_line_components, generate_sam
 from kolam_press.hypergraph import transform_relation
 from kolam_press.render import Style
 
-NOTEBOOK = Path(__file__).resolve().parents[1] / "kolam_press" / "kolam_engine_demo.ipynb"
 
-
-def notebook_crossing_loop():
-    nb = json.loads(NOTEBOOK.read_text())
-    ns: dict = {}
-    for i in (3, 7):    # lattice helpers + build_crossing_loop (its self-check prints)
-        exec("".join(nb["cells"][i]["source"]), ns)
-    return ns["build_crossing_loop"]
+def build_crossing_loop(n_dots: int):
+    """Reference CROSSING_LOOP from the original research notebook
+    (archive/kolam_engine_demo.ipynb): n dots in row 0, closed figure-8 chain."""
+    stroke = [(0, 1)]
+    for k in range(n_dots - 1):                         # forward zigzag
+        stroke.append((1, 2 * k + 2))
+        stroke.append((2 if k % 2 == 0 else 0, 2 * k + 3))
+    last_lj = 2 * (n_dots - 1) + 1                      # arc around the last dot
+    stroke.append((1, last_lj + 1))
+    stroke.append((2 - stroke[-2][0], last_lj))
+    for k in range(n_dots - 2, -1, -1):                 # backward zigzag: 2nd pass makes the X
+        stroke.append((1, 2 * k + 2))
+        stroke.append((2 if k % 2 == 0 else 0, 2 * k + 1))
+    stroke.append((1, 0))                               # arc around the first dot, close
+    stroke.append((0, 1))
+    return stroke
 
 
 # ------------------------------------------------------------------ compiler
-@pytest.mark.skipif(not NOTEBOOK.exists(), reason="notebook not present")
 def test_crossing_brush_reproduces_notebook_build_crossing_loop():
-    build = notebook_crossing_loop()
     for n in range(2, 10):
         c = compile_hypergraph(parse(f"c([0,0],[0,{n - 1}])"))
         assert len(c.strokes) == 1
         s = c.strokes[0]
-        assert s + s[:1] == build(n)
+        assert s + s[:1] == build_crossing_loop(n)
 
 
 def test_three_brushes_compile_to_proper_kolam():
@@ -66,10 +72,9 @@ def test_mirror_swaps_left_and_right_horns():
     assert np.abs(a[:, ::-1] - b).mean() < 1.0
 
 
-def test_tokens_and_sequence_text():
+def test_sequence_text():
     c = compile_hypergraph(parse("c([0,0],[0,1])"))
     assert c.sequence_text().startswith("[0,1] → [1,2] → [2,3]")
-    assert c.tokens()[:3] == [0 * 5 + 1, 1 * 5 + 2, 2 * 5 + 3]
 
 
 # ------------------------------------------------------------------ DSL + labels

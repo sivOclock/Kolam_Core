@@ -42,10 +42,6 @@ def to_lattice(v: Vertex) -> Point:
     return (2 * v[0] + 1, 2 * v[1] + 1)
 
 
-def is_anchor(p: Point) -> bool:
-    return p[0] % 2 == 1 and p[1] % 2 == 1
-
-
 def is_gate(p: Point) -> bool:
     return (p[0] + p[1]) % 2 == 1
 

@@ -94,7 +94,7 @@ The geometry check requires that:
 - Horns: 6132 plain, 5023 left, 5214 right.
 - 2134 dark-background images, 866 light.
 
-**Labels are readable from pixels.** A tiny MLP probe reading a 9×9 grid of ink samples around each gap (trained on
+**Labels are readable from pixels.** A one-off tiny MLP probe (since removed from the code) reading a 9×9 grid of ink samples around each gap (trained on
 1050 images, tested on 450; grid position given) gets:
 - 99.87% of gaps (crossing / parallel / split / tip) right;
 - 99.995% of horn-tip centres right;
@@ -109,7 +109,7 @@ rounded-versus-pointed differences that a real CNN should resolve. Full report:
 ```text
 kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · evaluate
 examples/      brush programs (showcase, flower, one_stroke)
-tests/         pytest: notebook equivalence, mirror ↔ left/right on pixels, DSL, decode, determinism
+tests/         pytest: notebook crossing-loop equivalence, mirror ↔ left/right on pixels, DSL, decode, determinism
 docs/          hypergraph_kolams.md (spec, §8 = brushes) · references.md · results/
 archive/       old TypeScript engine/UI — archived, not used
 ```

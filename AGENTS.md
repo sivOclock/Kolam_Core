@@ -41,7 +41,7 @@ Rules:
 Kolam_labs/
 ├── AGENTS.md
 ├── README.md / todo.md
-├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 = brush compiler)
+├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 = brush compiler, §9 = DSL + label JSON)
 ├── docs/references.md
 ├── docs/results/                  # gallery + evaluation report of the current generator
 ├── kolam_press/                   # data generator (Python package)
@@ -50,12 +50,12 @@ Kolam_labs/
 │   ├── dsl.py                     # brush DSL: c(...), p(...), h/hl/hr(...)
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
 │   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
-│   ├── generator.py / evaluate.py # random symmetric kolams; dataset checks + pixel probe
-│   └── kolam_engine_demo.ipynb    # original crossing-loop research (reference for tests)
+│   └── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
 ├── examples/*.kolam               # brush programs
 ├── tests/                         # pytest
 └── archive/                       # ARCHAIC — old engine, UI, slate-chalk design
     ├── kolam_engine/              # do not touch, do not import, do not revive
+    ├── kolam_engine_demo.ipynb    # original crossing-loop research (reference copied into tests/)
     └── pulli kolam encoder demo.html  # legacy — do not touch
 ```
 
@@ -74,7 +74,8 @@ Kolam_labs/
   isomorphism — exact vertex-mapping preserving type/arity/order/variant.
   The old engine's WL certificate was only a practical proxy. Do not conflate the two.
 - `kolam_press/compiler.py` is the relation compiler (gate model, hypergraph doc §8). One
-  `CROSSING_LOOP` along a row must keep reproducing the notebook's `build_crossing_loop(n)`.
+  `CROSSING_LOOP` along a row must keep reproducing the notebook's `build_crossing_loop(n)`
+  (reference copy in `tests/test_kolam_press.py`).
 - Notebook prototype: `build_crossing_loop(n_dots)` — n dots → n-1 crossings at
   `(1,2k+2)`, each visited 2× from perpendicular diagonals (forward ↘/↗, backward ↙/↖),
   closed loop. This is the reference `CROSSING_LOOP` compiler. JSON sample in last cell
