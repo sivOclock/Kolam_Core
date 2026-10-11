@@ -1,7 +1,8 @@
 """CLI.
 
-    python -m kolam_press draw "c([0,0],[0,3]); hl([1,1],[2,1])" -o kolam.png
+    python -m kolam_press draw "c([0,0],[0,3]); hl([1,1],S)" -o kolam.png
     python -m kolam_press draw -f examples/showcase.kolam -o showcase.png --view panel --seq
+    python -m kolam_press draw -f examples/sikku_diamond.kolam -o sikku.png --view kolam
     python -m kolam_press generate -n 2000 -o data/kolams --preview 24
     python -m kolam_press evaluate data/kolams
     python -m kolam_press gallery data/kolams -o gallery.png
@@ -27,10 +28,10 @@ from .render import Style, render_brush, render_kolam, render_panel
 def _draw(a):
     text = Path(a.file).read_text() if a.file else a.program
     try:
-        h = parse(text)
+        h = parse(text, strict=not a.free)
     except KolamError as e:
         sys.exit(f"error: {e}")
-    c = compile_hypergraph(h)
+    c = compile_hypergraph(h, strict=not a.free)
     geo = check_geometry(c)
     prog = format_program(h)
     print(prog)
@@ -85,6 +86,7 @@ def main(argv=None):
     d.add_argument("--size", type=int, default=384)
     d.add_argument("--seq", action="store_true", help="print the compiled lattice sequence")
     d.add_argument("--json", action="store_true", help="print the hypergraph label")
+    d.add_argument("--free", action="store_true", help="free drawing: allow what draws but is not a dataset label")
     d.set_defaults(fn=_draw)
     g = sub.add_parser("generate", help="generate a dataset")
     g.add_argument("-n", type=int, default=1000)

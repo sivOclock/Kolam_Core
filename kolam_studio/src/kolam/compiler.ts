@@ -1,38 +1,45 @@
 // Gate compiler: hypergraph -> gate states -> traced closed strokes (port of kolam_press/compiler.py).
 // The curve moves diagonally from gate to gate; each gate's state (brushes.json) decides the bounce.
+// Horns set no gate: drawn.ts grows them out of the traced line.
 
 import {
   type GateState,
-  type Hypergraph,
+  type HornDir,
   type HornVariant,
+  type Hypergraph,
   type Point,
   type Vertex,
   KolamError,
   edges,
   gateBetween,
   gateFlip,
-  hornFarTurn,
-  hornTipPoints,
+  hornIsLong,
+  hornTip,
   loopGateState,
   toLattice,
 } from './model'
 
-interface HornTip {
+export interface HornTip {
   rel: number
-  tipDot: Vertex
+  dot: Vertex
+  dir: HornDir
   variant: HornVariant
-  turn: [Point, Point, Point]
-  points: Point[]
+  long: boolean // crescent into an empty spot, else short (spec §10.6)
+  point: [number, number] // lattice position of the sharp tip
 }
 
 export interface Compiled {
+  rows: number
+  cols: number
   strokes: Point[][] // closed control sequences (first point not repeated)
   owners: number[][] // relation index per control point (-1 = none)
   gates: Map<string, [GateState, number]> // non-SPLIT gates -> (state, relation)
+  tips: HornTip[]
+  used: Set<string> // dots some relation uses: the only dots drawn
   crossings: number
 }
 
-const pk = (p: Point) => `${p[0]},${p[1]}`
+export const pk = (p: Point) => `${p[0]},${p[1]}`
 const DIRS: [number, number][] = [[1, 1], [1, -1], [-1, 1], [-1, -1]]
 
 function dotGates(v: Vertex): Point[] {
@@ -41,7 +48,7 @@ function dotGates(v: Vertex): Point[] {
 }
 
 export function compile(h: Hypergraph): Compiled {
-  // ---- gate configuration: each brush sets the gaps between its consecutive dots
+  // ---- gate configuration: each loop brush sets the gaps between its consecutive dots
   const gates = new Map<string, [GateState, number]>()
   const tips: HornTip[] = []
   const used = new Set<string>()
@@ -52,9 +59,9 @@ export function compile(h: Hypergraph): Compiled {
       dotRels.set(pk(v), [...(dotRels.get(pk(v)) ?? []), i])
     }
     if (r.type === 'HORN') {
-      const [a, b] = r.vertices
-      if (!gates.has(pk(gateBetween(a, b)))) gates.set(pk(gateBetween(a, b)), ['JOIN', i])
-      tips.push({ rel: i, tipDot: b, variant: r.variant!, turn: hornFarTurn(a, b), points: hornTipPoints(a, b, r.variant!) })
+      const v = r.vertices[0]
+      const long = hornIsLong(h, r)
+      tips.push({ rel: i, dot: v, dir: r.dir!, variant: r.variant!, long, point: hornTip(v, r.dir!, r.variant!, long) })
       return
     }
     const state = loopGateState(r.type)
@@ -95,11 +102,9 @@ export function compile(h: Hypergraph): Compiled {
   for (let r = 0; r < h.rows; r++)
     for (let c = 0; c < h.cols; c++)
       if (!used.has(pk([r, c]))) bare.add(dotGates([r, c]).map(pk).sort().join('|'))
-  const traced = raw.filter((s) => !(s.length === 4 && bare.has(s.map(pk).sort().join('|'))))
+  const strokes = raw.filter((s) => !(s.length === 4 && bare.has(s.map(pk).sort().join('|'))))
 
-  // ---- horn tips replace the far-side turn around their tip dot
-  const tipAt = new Map<string, HornTip>()
-  for (const t of tips) tipAt.set(`${pk(t.turn[1])}|${[pk(t.turn[0]), pk(t.turn[2])].sort().join('|')}`, t)
+  // ---- owner of each control point: the gate's relation, else the dot the strand turns around
   const owner = (g: Point, p: Point, q: Point): number => {
     const own = gates.get(pk(g))
     if (own) return own[1]
@@ -122,29 +127,7 @@ export function compile(h: Hypergraph): Compiled {
     }
     return best
   }
-  const strokes: Point[][] = []
-  const owners: number[][] = []
-  let placed = 0
-  for (const s of traced) {
-    const pts: Point[] = []
-    const own: number[] = []
-    s.forEach((g, i) => {
-      const p = s[(i - 1 + s.length) % s.length]
-      const q = s[(i + 1) % s.length]
-      const t = tipAt.get(`${pk(g)}|${[pk(p), pk(q)].sort().join('|')}`)
-      if (t) {
-        pts.push(...t.points)
-        own.push(...t.points.map(() => t.rel))
-        placed++
-      } else {
-        pts.push(g)
-        own.push(owner(g, p, q))
-      }
-    })
-    strokes.push(pts)
-    owners.push(own)
-  }
-  if (placed !== tips.length) throw new KolamError('a horn tip was not placed')
+  const owners = strokes.map((s) => s.map((g, i) => owner(g, s[(i - 1 + s.length) % s.length], s[(i + 1) % s.length])))
   const crossings = [...gates.values()].filter(([st]) => st === 'CROSS').length
-  return { strokes, owners, gates, crossings }
+  return { rows: h.rows, cols: h.cols, strokes, owners, gates, tips, used, crossings }
 }

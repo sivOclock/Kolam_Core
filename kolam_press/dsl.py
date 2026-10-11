@@ -4,12 +4,13 @@
     c([0,0],[0,4])                     # CROSSING_LOOP brush along row 0 (endpoints expand)
     p([2,0],[2,2],[4,2])               # PARALLEL_LOOP brush with a corner at [2,2]
     c([1,1],[1,3],[3,3],[3,1],[1,1])   # repeat the first dot to close a ring
-    h([3,4],[4,4])                     # PLAIN_HORN  [3,4] -> [4,4]   (alias h0, hp)
-    hl([0,2],[1,2])                    # LEFT_HORN   (alias h1)
-    hr([4,0],[3,0])                    # RIGHT_HORN  (alias h2)
+    h([4,4],S)                         # PLAIN_HORN on dot [4,4], tip pointing S   (alias h0, hp)
+    hl([1,2],N)                        # LEFT_HORN: tip curves to its left          (alias h1)
+    hr([3,0],W)                        # RIGHT_HORN                                 (alias h2)
 
-Dots are anchor coordinates [row, col], 0-indexed. Loop waypoints must share a
-row or column with the next waypoint; the dots in between are filled in.
+Dots are anchor coordinates [row, col], 0-indexed; N/E/S/W = up/right/down/left on
+screen. Loop waypoints must share a row or column with the next waypoint; the dots
+in between are filled in.
 Statements are separated by newlines or ';'. '#' starts a comment.
 """
 from __future__ import annotations
@@ -17,7 +18,7 @@ from __future__ import annotations
 import ast
 
 from .hypergraph import Hypergraph, KolamError, Relation
-from .spec import HORN, HORN_VARIANTS, LOOP_TYPES, adjacent, brushes
+from .spec import HORN, HORN_DIRS, HORN_VARIANTS, LOOP_TYPES, brushes
 
 SHORT_NAMES = {"CROSSING_LOOP": "c", "PARALLEL_LOOP": "p",
                "PLAIN_HORN": "h", "LEFT_HORN": "hl", "RIGHT_HORN": "hr"}
@@ -84,21 +85,21 @@ def parse(text: str, strict: bool = True) -> Hypergraph:
             if fn not in names:
                 raise KolamError(f"{where}: unknown brush {fn!r}; use c, p, h, hl, hr (or h0/h1/h2)")
             kind = names[fn]
-            pts = [_point(a, where) for a in node.args]
             if kind in HORN_VARIANTS:
-                if len(pts) != 2:
-                    raise KolamError(f"{where}: a horn takes exactly two dots: base -> tip")
-                if not adjacent(*pts):
-                    raise KolamError(f"{where}: horn dots {list(pts[0])} and {list(pts[1])} must be neighbours")
-                rels.append(Relation(HORN, tuple(pts), kind))
-            else:
-                if len(pts) < 2:
-                    raise KolamError(f"{where}: a loop brush needs at least two dots")
-                closed = len(pts) > 2 and pts[-1] == pts[0]
-                dots = _expand(pts, where)
-                if closed:
-                    dots = dots[:-1]
-                rels.append(Relation(kind, tuple(dots), None, closed))
+                args = node.args
+                if len(args) != 2 or not (isinstance(args[1], ast.Name) and args[1].id in HORN_DIRS):
+                    raise KolamError(f"{where}: a horn is one dot and a direction, like {fn}([1,1],N)"
+                                     " (N/E/S/W); the old two-dot horn h(A,B) is now p(A,B) + h(B,dir)")
+                rels.append(Relation(HORN, (_point(args[0], where),), kind, False, args[1].id))
+                continue
+            pts = [_point(a, where) for a in node.args]
+            if len(pts) < 2:
+                raise KolamError(f"{where}: a loop brush needs at least two dots")
+            closed = len(pts) > 2 and pts[-1] == pts[0]
+            dots = _expand(pts, where)
+            if closed:
+                dots = dots[:-1]
+            rels.append(Relation(kind, tuple(dots), None, closed))
     if not rels:
         raise KolamError("empty program")
     if grid is None:
@@ -123,9 +124,10 @@ def format_program(h: Hypergraph) -> str:
     lines = [f"grid({h.rows}, {h.cols})"]
     for r in h.canonical().relations:
         if r.type == HORN:
-            name, pts = SHORT_NAMES[r.variant], list(r.vertices)
-        else:
-            assert r.type in LOOP_TYPES
-            name, pts = SHORT_NAMES[r.type], _waypoints(list(r.vertices), r.closed)
-        lines.append(f"{name}(" + ",".join(f"[{a},{b}]" for a, b in pts) + ")")
+            (a, b), = r.vertices
+            lines.append(f"{SHORT_NAMES[r.variant]}([{a},{b}],{r.dir})")
+            continue
+        assert r.type in LOOP_TYPES
+        pts = _waypoints(list(r.vertices), r.closed)
+        lines.append(f"{SHORT_NAMES[r.type]}(" + ",".join(f"[{a},{b}]" for a, b in pts) + ")")
     return "\n".join(lines)

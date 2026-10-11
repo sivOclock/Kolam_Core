@@ -2,7 +2,7 @@
   "n": 3000,
   "seed": 2026,
   "unique": true,
-  "redrawn_duplicates": 226,
+  "redrawn_duplicates": 165,
   "config": {
     "min_size": 3,
     "max_size": 8,
@@ -26,17 +26,18 @@
     "ring_prob": 0.15,
     "mix_prob": 0.3,
     "straight_bias": 0.65,
+    "max_horn_frac": 0.2,
     "max_chain": 8,
     "coverage": [
       0.7,
       1.0
     ],
     "fill_prob": 0.85,
-    "crop_prob": 0.85,
+    "crop_prob": 1.0,
     "max_proposals": 300,
     "image_size": 384,
     "augment": true
   },
-  "seconds": 134.73,
+  "seconds": 248.32,
   "brushes": "kolam_press/brushes.json"
 }

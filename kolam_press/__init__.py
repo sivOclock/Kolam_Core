@@ -1,7 +1,7 @@
 """kolam_press: brush-program -> ordered hypergraph -> kolam data generator.
 
     from kolam_press import parse, compile_hypergraph, render_kolam
-    h = parse("c([0,0],[0,3]); hl([1,0],[2,0])")
+    h = parse("c([0,0],[0,3]); hl([1,0],S)")
     img = render_kolam(compile_hypergraph(h))
 """
 from .compiler import Compiled, compile_hypergraph, decode, observe

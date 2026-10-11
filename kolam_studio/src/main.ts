@@ -1,8 +1,10 @@
 import './style.css'
 import { Board, CHALK, bezierSegments, type XY } from './board'
 import { type Compiled, compile } from './kolam/compiler'
+import { drawn } from './kolam/drawn'
 import {
   type Hypergraph,
+  type HornDir,
   type HornVariant,
   type Problem,
   type Relation,
@@ -11,6 +13,7 @@ import {
   adjacent,
   canonical,
   formatProgram,
+  hornDir,
   parse,
   toLattice,
   validate,
@@ -81,7 +84,7 @@ const hintEl = $<HTMLParagraphElement>('hint')
 
 // ── state ──────────────────────────────────────────────────────────────────
 interface Snapshot { rows: number; cols: number; rels: Relation[] }
-interface Pending { brush: BrushKey; dots: Vertex[]; closed: boolean }
+interface Pending { brush: BrushKey; dots: Vertex[]; closed: boolean; dir: HornDir | null }
 
 let rows = 5
 let cols = 5
@@ -124,19 +127,30 @@ function dotAt(x: number, y: number): Vertex | null {
   return Math.hypot(li - (2 * r + 1), lj - (2 * c + 1)) < 0.8 ? [r, c] : null
 }
 
-/** What you "draw" for a relation, in lattice coords: the line through its dots; a horn is an arrow. */
+/** What you "draw" for a relation, in lattice coords: the line through its dots; a horn is an
+ *  arrow out of its dot, with one barb on the side it curves to. */
 function relShape(r: Relation): XY[][] {
   const L = r.vertices.map(toLattice)
   if (r.type !== 'HORN') return [r.closed ? [...L, L[0]] : L]
-  const [a, b] = L
-  const f: XY = [(b[0] - a[0]) / 2, (b[1] - a[1]) / 2]
+  const a = L[0]
+  const f = hornDir(r.dir!)
   const left: XY = [-f[1], f[0]]
-  const tip: XY = [b[0] + 0.55 * f[0], b[1] + 0.55 * f[1]]
+  const tip: XY = [a[0] + 1.3 * f[0], a[1] + 1.3 * f[1]]
   const sides = r.variant === 'LEFT_HORN' ? [1] : r.variant === 'RIGHT_HORN' ? [-1] : [1, -1]
   return [
-    [a, tip],
-    ...sides.map((sg): XY[] => [tip, [tip[0] - 0.6 * f[0] + sg * 0.5 * left[0], tip[1] - 0.6 * f[1] + sg * 0.5 * left[1]]]),
+    [[a[0] + 0.35 * f[0], a[1] + 0.35 * f[1]], tip],
+    ...sides.map((sg): XY[] => [tip, [tip[0] - 0.5 * f[0] + sg * 0.45 * left[0], tip[1] - 0.5 * f[1] + sg * 0.45 * left[1]]]),
   ]
+}
+
+/** The direction (N/E/S/W) from dot v toward a point on the board, once it is far enough away. */
+function dirToward(v: Vertex, x: number, y: number): HornDir | null {
+  const [li, lj] = drawBoard.lattice(x, y)
+  const [a, b] = toLattice(v)
+  const dr = li - a
+  const dc = lj - b
+  if (Math.hypot(dr, dc) < 0.6) return null
+  return Math.abs(dr) > Math.abs(dc) ? (dr < 0 ? 'N' : 'S') : dc < 0 ? 'W' : 'E'
 }
 
 function segDist(p: XY, a: XY, b: XY): number {
@@ -162,22 +176,18 @@ function relationNear(x: number, y: number): number | null {
 
 function pendingRelation(p: Pending): Relation {
   return isHorn(p.brush)
-    ? { type: 'HORN', vertices: p.dots.slice(0, 2), variant: VARIANT[p.brush] }
+    ? { type: 'HORN', vertices: [p.dots[0]], variant: VARIANT[p.brush], dir: p.dir! }
     : { type: p.brush === 'c' ? 'CROSSING_LOOP' : 'PARALLEL_LOOP', vertices: p.dots, closed: p.closed }
 }
 
+/** Is the stroke being drawn complete enough to show (a loop with 2 dots, a horn with a direction)? */
+const ready = (p: Pending | null): p is Pending => !!p && (isHorn(p.brush) ? p.dir !== null : p.dots.length >= 2)
+
 /** Grow the stroke being drawn toward dot d (fills in straight runs, allows backtracking). */
 function extend(p: Pending, d: Vertex | null): boolean {
-  if (!d || p.closed) return false
+  if (!d || p.closed || isHorn(p.brush)) return false // a horn aims with the pointer, see pointermove
   const last = p.dots[p.dots.length - 1]
   if (eq(d, last)) return false
-  if (isHorn(p.brush)) {
-    const a = p.dots[0]
-    if (eq(d, a)) p.dots = [a]
-    else if (adjacent(a, d)) p.dots = [a, d]
-    else return false
-    return true
-  }
   if (p.dots.length >= 2 && eq(d, p.dots[p.dots.length - 2])) {
     p.dots.pop()
     return true
@@ -240,14 +250,15 @@ function renderDraw(all: Relation[], bad: Set<number>): void {
 
 function renderKolam(k: Compiled | null, h: Hypergraph | null, stale: boolean, selRel: number | null): void {
   const B = kolamBoard
-  B.layout(h?.rows ?? rows, h?.cols ?? cols)
+  B.layout(h?.rows ?? rows, h?.cols ?? cols, 1) // room for crescents pointing off the grid
   B.clear()
-  B.dots(stale ? CHALK.dots : CHALK.main, Math.max(3, B.s * 0.14))
-  if (!k) return
+  if (!k) return B.dots(CHALK.dots, Math.max(3, B.s * 0.14))
+  B.dots(stale ? CHALK.dots : CHALK.main, Math.max(3, B.s * 0.14), k.used) // unused dots are not drawn
   const w = Math.max(2.5, B.s * 0.14)
-  k.strokes.forEach((P, si) => {
+  const shown = drawn(k)
+  shown.strokes.forEach((P, si) => {
     bezierSegments(B, P).forEach((seg, i) => {
-      const own = k.owners[si][i]
+      const own = shown.owners[si][i]
       const colour = stale ? CHALK.dots : own >= 0 && own === selRel ? CHALK.highlight : CHALK.main
       B.chalk(seg, colour, w, si * 1009 + i * 7 + 1)
     })
@@ -286,7 +297,7 @@ function renderPanel(all: Relation[], problems: Problem[], k: Compiled | null): 
   const bad = new Set(problems.map((p) => p.rel))
   listEl.innerHTML = rels
     .map((r, i) => {
-      const pts = r.type === 'HORN' ? `[${r.vertices[0]}] → [${r.vertices[1]}]` : `${r.vertices.length} dots${r.closed ? ' ↺' : ''}`
+      const pts = r.type === 'HORN' ? `[${r.vertices[0]}] → ${r.dir}` : `${r.vertices.length} dots${r.closed ? ' ↺' : ''}`
       const cls = [i === selected ? 'selected' : '', bad.has(i) ? 'bad' : ''].join(' ')
       return `<li data-i="${i}" class="${cls}"><i style="background:${relColour(r)}"></i>${relName(r)} ${pts}<small>#${i}</small></li>`
     })
@@ -296,14 +307,16 @@ function renderPanel(all: Relation[], problems: Problem[], k: Compiled | null): 
     selected !== null
       ? `<kbd>#${selected}</kbd> selected · <kbd>c p h l r</kbd> change its brush · <kbd>⌫</kbd> delete · <kbd>esc</kbd> deselect`
       : pending
-        ? `Drawing: move across dots, then <kbd>click</kbd> to stop. ${isHorn(pending.brush) ? 'Stop on a dot next to the base.' : 'Move onto the first dot to close a ring.'} <kbd>esc</kbd> cancels.`
+        ? isHorn(pending.brush)
+          ? `Horn: point up, down, left or right of the dot, then <kbd>click</kbd>. <kbd>esc</kbd> cancels.`
+          : `Drawing: move across dots, then <kbd>click</kbd> to stop. Move onto the first dot to close a ring. <kbd>esc</kbd> cancels.`
         : isHorn(brush)
-          ? `Horn: <kbd>click</kbd> the base dot, move to a neighbouring tip dot, <kbd>click</kbd> again.`
+          ? `Horn: <kbd>click</kbd> a dot, point where the tip goes (N/E/S/W), <kbd>click</kbd> again. Toward an empty spot it grows a long crescent.`
           : `<kbd>click</kbd> a dot to start, move across dots, <kbd>click</kbd> again to stop. Click a stroke (between dots) to select it.`
 }
 
 function render(fromState = false): void {
-  const all = pending && pending.dots.length >= 2 ? [...rels, pendingRelation(pending)] : rels
+  const all = ready(pending) ? [...rels, pendingRelation(pending)] : rels
   const h: Hypergraph = { rows, cols, relations: all }
   const problems = validate(h, false) // a free drawing: only what cannot be drawn blocks it
   let k: Compiled | null = null
@@ -334,7 +347,7 @@ let fingerDragged = false
 
 function finish(at: XY | null): void {
   if (!pending) return
-  if (pending.dots.length >= 2) {
+  if (ready(pending)) {
     rels = [...rels, pendingRelation(pending)]
     selected = null // stay in drawing mode: the next brush key picks a brush, it doesn't edit this stroke
     textError = null
@@ -351,9 +364,12 @@ drawCanvas.addEventListener('pointerdown', (e) => {
   const d = dotAt(x, y)
   cursor = [x, y]
   if (!pending) {
-    if (d) pending = { brush, dots: [d], closed: false }
+    if (d) pending = { brush, dots: [d], closed: false, dir: null }
     else selected = relationNear(x, y)
     fingerDragged = false
+  } else if (isHorn(pending.brush)) {
+    pending.dir = dirToward(pending.dots[0], x, y) ?? pending.dir // a tap aims and finishes the horn
+    finish([x, y])
   } else if (e.pointerType !== 'mouse' && d && !eq(d, pending.dots[pending.dots.length - 1]) && extend(pending, d)) {
     // touch has no hover: each tap on a new dot extends the stroke
   } else {
@@ -365,7 +381,12 @@ drawCanvas.addEventListener('pointermove', (e) => {
   const [x, y] = localXY(e)
   const d = dotAt(x, y)
   const touchDown = e.pointerType !== 'mouse' && e.buttons > 0
-  const moved = pending && (e.pointerType === 'mouse' || touchDown) ? extend(pending, d) : false
+  let moved = pending && (e.pointerType === 'mouse' || touchDown) ? extend(pending, d) : false
+  if (pending && isHorn(pending.brush)) {
+    const dir = dirToward(pending.dots[0], x, y)
+    moved = dir !== pending.dir
+    pending.dir = dir
+  }
   if (moved && touchDown) fingerDragged = true
   const hoverChanged = (d === null) !== (hover === null) || (d && hover && !eq(d, hover))
   hover = d
@@ -387,18 +408,18 @@ drawCanvas.addEventListener('pointerleave', () => {
 // ── panel input ────────────────────────────────────────────────────────────
 function setBrush(b: BrushKey): void {
   if (selected !== null) {
-    // change the selected stroke's brush (2-dot loops and horns convert into each other)
+    // change the selected stroke's brush: loops into loops, horns into horns
     const r = rels[selected]
     let next: Relation | null = null
-    if (isHorn(b) && (r.type === 'HORN' || (r.vertices.length === 2 && !r.closed)))
-      next = { type: 'HORN', vertices: r.vertices.slice(0, 2), variant: VARIANT[b] }
-    else if (!isHorn(b)) next = { type: b === 'c' ? 'CROSSING_LOOP' : 'PARALLEL_LOOP', vertices: r.vertices, closed: r.closed }
+    if (isHorn(b) && r.type === 'HORN') next = { ...r, variant: VARIANT[b] }
+    else if (!isHorn(b) && r.type !== 'HORN')
+      next = { type: b === 'c' ? 'CROSSING_LOOP' : 'PARALLEL_LOOP', vertices: r.vertices, closed: r.closed }
     if (next) {
       rels = rels.map((x, i) => (i === selected ? next! : x))
       commit()
     } else {
       statusEl.className = 'status error'
-      statusEl.textContent = 'only a 2-dot loop can become a horn'
+      statusEl.textContent = 'a loop and a horn cannot turn into each other'
       return
     }
   }

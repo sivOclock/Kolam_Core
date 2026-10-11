@@ -19,14 +19,14 @@ You draw a kolam the way you would with three brushes, through the dots of a gri
 |---|---|---|
 | `CROSSING_LOOP` | `c([0,0],[0,4])` | a chain of dots; the line **crosses** (✕) in every gap along the chain |
 | `PARALLEL_LOOP` | `p([2,0],[2,2],[4,2])` | a chain of dots; the strands run **parallel** around them, with no crossings |
-| `HORN` | `h(A,B)` · `hl(A,B)` · `hr(A,B)` | grows from A around B into a sharp tip: plain / curling left / curling right (aliases `h0` `h1` `h2`) |
+| `HORN` | `h([1,1],N)` · `hl(…,N)` · `hr(…,N)` | a sharp tip grown out of dot `[1,1]`'s line, pointing N/E/S/W: straight / curving a little left / right (aliases `h0` `h1` `h2`). Pointing at an empty spot it is a long crescent; at a used dot, short |
 
 Waypoints on the same row or column are filled in. Repeat the first dot to close a ring:
 `c([1,1],[1,3],[3,3],[3,1],[1,1])`.
 
 ```bash
 pip install -r requirements.txt
-python -m kolam_press draw "c([0,0],[0,3]); p([1,0],[1,3]); hl([2,1],[2,2])" -o kolam.png
+python -m kolam_press draw "c([0,0],[0,3]); p([1,0],[1,3]); hl([1,3],E)" -o kolam.png
 python -m kolam_press draw -f examples/flower.kolam -o flower.png --view panel --seq
 ```
 
@@ -36,7 +36,7 @@ How it works, from hypergraph doc §8:
 - Each brush only sets the state of the gaps between neighbouring dots: `CROSS`, `JOIN`
   or `SPLIT`.
 - The curve is traced from gate to gate (the Gerdes / Nagata mirror-curve model).
-- A horn swaps one rounded turn for a sharp tip template.
+- A horn sets no gap: the drawing grows the line in front of its dot into a sharp tip (§10.6).
 
 A crossing brush along a row reproduces the notebook's `build_crossing_loop(n)` exactly.
 
@@ -53,7 +53,7 @@ The generator works structure first:
 2. Lay random brush strokes with their symmetric copies, keeping only valid ones.
 3. In about 40% of kolams (tree mode), grow the brush lines as a tree, which gives
    single-stroke kolams.
-4. Cover leftover dots by extending chains or adding horns.
+4. Cover leftover dots by extending chains or adding horns (at most one horn per 5 dots).
 5. Compile, check the geometry, render with a random look (chalk, ink or colour; line
    width, dots, blur, noise, hand jitter), and re-draw any duplicate.
 
@@ -75,26 +75,28 @@ Every sample is re-checked from its label alone, independently of the generator:
 | label valid and canonical; its brush program re-parses to the same label | 0 |
 | recompiling the label reproduces the stored lattice sequence | 0 |
 | geometry (see below) | 0 |
-| the gate states + horn tips visible in the drawing decode back to the exact label | 0 |
+| the gate states + horns visible in the drawing decode back to the exact label | 0 |
 | a sample of 200 images re-renders byte-identically from (label, style) | 0 |
 | different labels that give the same picture | 0 |
-| tree-shaped brush lines give one stroke per tree (§8.6; 2350 such kolams) | 0 |
+| tree-shaped brush lines give one stroke per tree (§8.6; 2208 such kolams) | 0 |
 
 The geometry check requires that:
-- curves stay ≥ 0.44 from every dot;
-- strands stay ≥ 0.23 apart except at their crossings (dots are 2 apart);
+- curves stay ≥ 0.46 from every drawn dot;
+- strands stay ≥ 0.2 apart except at their crossings (dots are 2 apart);
 - every crossing gap shows exactly one ✕;
 - the only corners are horn tips.
 
 **Diversity**
-- 3000 / 3000 unique labels; 2841 isomorphism classes (§6).
-- Grids: all 36 shapes from 3×3 to 8×8, plus a few cropped smaller ones.
-- 7 symmetry types; 29% single-stroke; 55% use all three brushes.
-- 800 closed rings.
-- Horns: 6132 plain, 5023 left, 5214 right.
-- 2134 dark-background images, 866 light.
+- 3000 / 3000 unique labels; 2887 isomorphism classes (§6).
+- Grids: all 36 shapes from 3×3 to 8×8, plus cropped smaller ones (always cropped: unused dots
+  are not drawn).
+- 7 symmetry types; 28% single-stroke; 60% use all three brushes.
+- 1000 closed rings.
+- Horns: 5131 straight, 4509 left, 4653 right.
+- 2120 dark-background images, 880 light.
 
-**Labels are readable from pixels.** A one-off tiny MLP probe (since removed from the code) reading a 9×9 grid of ink samples around each gap (trained on
+**Labels are readable from pixels** (measured on the earlier run, before the one-dot horns and
+capsule parallels). A one-off tiny MLP probe (since removed from the code) reading a 9×9 grid of ink samples around each gap (trained on
 1050 images, tested on 450; grid position given) gets:
 - 99.87% of gaps (crossing / parallel / split / tip) right;
 - 99.995% of horn-tip centres right;
@@ -108,7 +110,7 @@ rounded-versus-pointed differences that a real CNN should resolve. Full report:
 
 ```text
 kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · evaluate
-examples/      brush programs (showcase, flower, one_stroke)
+examples/      brush programs (showcase, flower, one_stroke, sikku_diamond = a photographed kolam)
 tests/         pytest: notebook crossing-loop equivalence, mirror ↔ left/right on pixels, DSL, decode, determinism
 docs/          hypergraph_kolams.md (spec, §8 = brushes) · references.md · results/
 archive/       old TypeScript engine/UI — archived, not used

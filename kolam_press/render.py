@@ -7,9 +7,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .compiler import Compiled
-from .geometry import sample_stroke
+from .geometry import drawn, per_segment, sample_stroke
 from .hypergraph import Hypergraph
-from .spec import CROSSING_LOOP, HORN, LEFT_HORN, PARALLEL_LOOP, RIGHT_HORN, left_of, to_lattice
+from .spec import CROSSING_LOOP, HORN, LEFT_HORN, PARALLEL_LOOP, RIGHT_HORN, horn_dir, left_of, to_lattice
 
 BRUSH_COLORS = {CROSSING_LOOP: (236, 98, 78), PARALLEL_LOOP: (74, 158, 232), HORN: (86, 196, 120)}
 
@@ -58,14 +58,16 @@ def random_style(rng: np.random.Generator, size: int = 384) -> Style:
 
 
 class _Canvas:
-    def __init__(self, rows: int, cols: int, style: Style):
+    def __init__(self, rows: int, cols: int, style: Style, extent=None):
+        """extent (top, bottom, left, right) in lattice units; default the dot grid's box."""
         self.s = style
         ss = style.supersample
         self.W = style.size * ss
-        H, W = 2 * rows, 2 * cols
+        t, b, lf, rt = extent or (0, 2 * rows, 0, 2 * cols)
+        H, W = b - t, rt - lf
         self.scale = self.W / (max(H, W) + 2 * style.margin)
-        self.ox = (self.W - W * self.scale) / 2
-        self.oy = (self.W - H * self.scale) / 2
+        self.ox = (self.W - W * self.scale) / 2 - lf * self.scale
+        self.oy = (self.W - H * self.scale) / 2 - t * self.scale
         self.img = Image.new("RGB", (self.W, self.W), style.bg)
         self.draw = ImageDraw.Draw(self.img)
         self.rows, self.cols = rows, cols
@@ -77,11 +79,13 @@ class _Canvas:
     def lw(self, w: float) -> int:
         return max(1, int(round(w * self.scale)))
 
-    def dots(self, colour=None, radius=None):
+    def dots(self, colour=None, radius=None, only=None):
         r = (radius or self.s.dot_radius) * self.scale
         col = colour or self.s.dot or self.s.ink
         for i in range(self.rows):
             for j in range(self.cols):
+                if only is not None and (i, j) not in only:
+                    continue
                 (x, y), = self.px(np.array([to_lattice((i, j))]))
                 self.draw.ellipse([x - r, y - r, x + r, y + r], fill=col)
 
@@ -97,24 +101,41 @@ class _Canvas:
 
 
 def _jittered(strokes, jitter: float, seed: int):
+    """Hand wobble: a smooth noise field (random offsets at lattice points, bilinear in between), so
+    shared points move together and a densely drawn horn stroke stays smooth."""
     if jitter <= 0:
         return strokes
+    P = np.vstack([np.asarray(s, float) for s in strokes])
+    lo = np.floor(P.min(0)).astype(int) - 1
+    hi = np.ceil(P.max(0)).astype(int) + 2
     rng = np.random.default_rng(seed)
-    pts = sorted({p for s in strokes for p in s})
-    off = dict(zip(pts, rng.normal(0, jitter, (len(pts), 2))))
-    return [[(p[0] + off[p][0], p[1] + off[p][1]) for p in s] for s in strokes]
+    N = rng.normal(0, jitter, (hi[0] - lo[0], hi[1] - lo[1], 2))
+
+    def move(p):
+        x = np.asarray(p, float) - lo
+        i, j = np.floor(x).astype(int)
+        a, b = x - (i, j)
+        o = ((1 - a) * (1 - b) * N[i, j] + a * (1 - b) * N[i + 1, j]
+             + (1 - a) * b * N[i, j + 1] + a * b * N[i + 1, j + 1])
+        return (p[0] + o[0], p[1] + o[1])
+    return [[move(p) for p in s] for s in strokes]
 
 
 def render_kolam(c: Compiled, style: Style | None = None, coloured: bool = False) -> Image.Image:
-    """The kolam image. coloured=True paints each part with the brush that made it."""
+    """The kolam image. coloured=True paints each part with the brush that made it. Only dots some
+    relation uses are drawn, and the frame grows to fit a crescent that points off the grid."""
     style = style or Style()
-    cv = _Canvas(c.config.rows, c.config.cols, style)
+    rows, cols = c.config.rows, c.config.cols
+    shown, owners = drawn(c)
+    P = np.vstack([np.asarray(s, float) for s in shown]) if shown else np.zeros((1, 2))
+    ext = (min(0, P[:, 0].min()), max(2 * rows, P[:, 0].max()), min(0, P[:, 1].min()), max(2 * cols, P[:, 1].max()))
+    cv = _Canvas(rows, cols, style, ext)
     if style.show_dots:
-        cv.dots()
-    n = 16
+        cv.dots(only=c.config.ring_dots)
     w = cv.lw(style.line_width)
     rels = c.hypergraph.relations
-    for s, own in zip(_jittered(c.strokes, style.jitter, style.seed), c.owners):
+    for s, own in zip(_jittered(shown, style.jitter, style.seed), owners):
+        n = per_segment(s, 16)
         P = sample_stroke(s, n)
         if not coloured:
             xy = cv.px(np.vstack([P, P[:1]]))
@@ -140,15 +161,14 @@ def render_brush(h: Hypergraph, style: Style | None = None) -> Image.Image:
     for r in h.relations:
         col = BRUSH_COLORS[r.type]
         L = np.array([to_lattice(v) for v in r.vertices], float)
-        if r.type == HORN:
-            a, b = L
-            f = (b - a) / 2
-            lft = np.array(left_of((int(f[0]), int(f[1]))), float)
-            tip = b + 0.55 * f
-            cv.draw.line(cv.px(np.array([a, tip])), fill=col, width=w)
+        if r.type == HORN:                     # an arrow out of the dot; one barb shows the curl side
+            f = np.array(horn_dir(r.dir), float)
+            lft = np.array(left_of(horn_dir(r.dir)), float)
+            tip = L[0] + 1.3 * f
+            cv.draw.line(cv.px(np.array([L[0] + 0.35 * f, tip])), fill=col, width=w)
             barbs = {LEFT_HORN: [1], RIGHT_HORN: [-1]}.get(r.variant, [1, -1])
             for sgn in barbs:
-                cv.draw.line(cv.px(np.array([tip, tip - 0.6 * f + sgn * 0.5 * lft])), fill=col, width=w)
+                cv.draw.line(cv.px(np.array([tip, tip - 0.5 * f + sgn * 0.45 * lft])), fill=col, width=w)
             continue
         if r.closed:
             L = np.vstack([L, L[:1]])

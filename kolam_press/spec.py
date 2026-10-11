@@ -6,6 +6,7 @@ with exactly one odd coordinate; centers have both even. See brushes.json.
 from __future__ import annotations
 
 import json
+import math
 from functools import lru_cache
 from pathlib import Path
 
@@ -18,6 +19,7 @@ PLAIN_HORN, LEFT_HORN, RIGHT_HORN = "PLAIN_HORN", "LEFT_HORN", "RIGHT_HORN"
 LOOP_TYPES = (CROSSING_LOOP, PARALLEL_LOOP)
 RELATION_TYPES = (CROSSING_LOOP, PARALLEL_LOOP, HORN)
 HORN_VARIANTS = (PLAIN_HORN, LEFT_HORN, RIGHT_HORN)
+HORN_DIRS = ("N", "E", "S", "W")
 
 
 @lru_cache(maxsize=1)
@@ -29,8 +31,17 @@ def loop_gate_state(rtype: str) -> str:
     return brushes()["relations"][rtype]["gate_state"]
 
 
-def tip_template(variant: str) -> list[tuple[int, int]]:
-    return [tuple(p) for p in brushes()["relations"][HORN]["tip_templates"][variant]]
+def horn_dir(name: str) -> tuple[int, int]:
+    return tuple(brushes()["relations"][HORN]["dirs"][name])
+
+
+def horn_shape(long: bool) -> dict:
+    return brushes()["relations"][HORN]["grow"]["long" if long else "short"]
+
+
+def horn_curl(variant: str) -> int:
+    """+1 LEFT_HORN, 0 PLAIN_HORN, -1 RIGHT_HORN."""
+    return brushes()["relations"][HORN]["variants"][variant]
 
 
 def gate_flip(state: str, gate: Point) -> tuple[int, int]:
@@ -64,18 +75,16 @@ def left_of(d: tuple[int, int]) -> tuple[int, int]:
     return (-d[1], d[0])
 
 
-def horn_frame(a: Vertex, b: Vertex) -> tuple[Point, tuple[int, int], tuple[int, int]]:
-    """(B's lattice point, fwd, left) for HORN(A -> B)."""
-    fwd = (b[0] - a[0], b[1] - a[1])
-    return to_lattice(b), fwd, left_of(fwd)
+def horn_target(v: Vertex, d: str) -> Vertex:
+    """The spot a horn on dot v points at (may be off the grid)."""
+    f = horn_dir(d)
+    return (v[0] + f[0], v[1] + f[1])
 
 
-def horn_tip_points(a: Vertex, b: Vertex, variant: str) -> list[Point]:
-    o, f, l = horn_frame(a, b)
-    return [(o[0] + u * f[0] + v * l[0], o[1] + u * f[1] + v * l[1]) for u, v in tip_template(variant)]
-
-
-def horn_far_turn(a: Vertex, b: Vertex) -> tuple[Point, Point, Point]:
-    """(left gate, far gate, right gate) of B: the turn the tip template replaces."""
-    o, f, l = horn_frame(a, b)
-    return ((o[0] + l[0], o[1] + l[1]), (o[0] + f[0], o[1] + f[1]), (o[0] - l[0], o[1] - l[1]))
+def horn_tip(v: Vertex, d: str, variant: str, long: bool) -> tuple[float, float]:
+    """Lattice point of a horn's tip (brushes.json HORN.grow): reach along fwd, turned by the curl."""
+    o, f = to_lattice(v), horn_dir(d)
+    l, sh, s = left_of(f), horn_shape(long), horn_curl(variant)
+    a = s * sh["curl"]
+    cu, cv = sh["reach"] * math.cos(a), sh["reach"] * math.sin(a)
+    return (o[0] + cu * f[0] + cv * l[0], o[1] + cu * f[1] + cv * l[1])

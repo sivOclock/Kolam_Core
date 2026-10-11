@@ -1,11 +1,11 @@
 # Crossing ring with horn petals (4-fold symmetric)
 grid(5, 5)
 c([1,1],[1,3],[3,3],[3,1],[1,1])    # closed crossing ring (8 dots)
-h([1,2],[0,2])                      # four plain horns pointing out
-h([2,3],[2,4])
-h([3,2],[4,2])
-h([2,1],[2,0])
-hl([1,1],[0,1])                     # corner petals curling around
-hl([1,3],[1,4])
-hl([3,3],[4,3])
-hl([3,1],[3,0])
+h([1,2],N)                          # four straight horns pointing out
+h([2,3],E)
+h([3,2],S)
+h([2,1],W)
+hl([1,1],W)                         # corner petals curling around
+hl([1,3],N)
+hl([3,3],E)
+hl([3,1],S)

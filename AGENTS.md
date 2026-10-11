@@ -25,8 +25,10 @@ the primary label.
 
 ## The 3 forms (only these — see docs/hypergraph_kolams.md §2)
 
-1. `HORN` — exactly 2 vertices, ordered. Variants: `PLAIN_HORN`, `LEFT_HORN`, `RIGHT_HORN`.
-   All are type `HORN` (JSON: `{"type":"HORN","variant":"LEFT_HORN","vertices":[...]}`).
+1. `HORN` — exactly 1 vertex plus a direction `N`/`E`/`S`/`W` (where its tip points). Variants:
+   `PLAIN_HORN` (straight), `LEFT_HORN`, `RIGHT_HORN` (curve a little left/right). All are type
+   `HORN` (JSON: `{"type":"HORN","variant":"LEFT_HORN","vertices":[[r,c]],"dir":"N"}`; DSL
+   `hl([r,c],N)`). The old two-dot horn `HORN(A → B)` is retired (= `p(A,B)` + a horn on B).
 2. `CROSSING_LOOP` — multiple vertices in cyclic order.
 3. `PARALLEL_LOOP` — multiple vertices in structural order.
 
@@ -34,7 +36,8 @@ Rules:
 - Never use `NORMAL_LOOP` (old name for `CROSSING_LOOP`). Never use `HORN_LEFT` / `HORN_RIGHT`.
 - Vertices are anchor dots only (`V = {A, B, C, ...}`). Midpoints / lattice coords are
   not part of the learned representation.
-- Ordering matters. `HORN(A → B)` ≠ `HORN(B → A)`. Cyclic order matters for `CROSSING_LOOP`.
+- Ordering matters. A horn's direction matters (`HORN(A, N)` ≠ `HORN(A, S)`). Cyclic order matters
+  for `CROSSING_LOOP`.
 
 ## Repo layout (current)
 
@@ -42,19 +45,20 @@ Rules:
 Kolam_labs/
 ├── AGENTS.md
 ├── README.md / todo.md
-├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 = brush compiler, §9 = DSL + label JSON)
+├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns)
 ├── docs/references.md
 ├── docs/results/                  # gallery + evaluation report of the current generator
 ├── kolam_press/                   # data generator (Python package)
-│   ├── brushes.json               # shared brush spec: gate states + horn tip templates
+│   ├── brushes.json               # shared brush spec: gate states + horn directions and shapes
 │   ├── spec.py / hypergraph.py    # lattice helpers; labels, validation, isomorphism
-│   ├── dsl.py                     # brush DSL: c(...), p(...), h/hl/hr(...)
+│   ├── dsl.py                     # brush DSL: c(...), p(...), h/hl/hr([r,c],N)
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
 │   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
 │   └── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
 ├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam
-│   └── src/kolam/                 # TS port of model + compiler; reads kolam_press/brushes.json
-├── examples/*.kolam               # brush programs
+│   └── src/kolam/                 # TS port of model + compiler + drawn(); reads kolam_press/brushes.json
+├── examples/*.kolam               # brush programs (sikku_diamond = a photographed kolam, free drawing)
+├── refs/                          # reference sheets: primitives, mixed options, example kolams
 ├── tests/                         # pytest
 └── archive/                       # ARCHAIC — old engine, UI, slate-chalk design
     ├── kolam_engine/              # do not touch, do not import, do not revive
@@ -76,6 +80,26 @@ Kolam_labs/
 - Hypergraph-doc isomorphism (§6) is the definition: ordered typed hypergraph
   isomorphism — exact vertex-mapping preserving type/arity/order/variant.
   The old engine's WL certificate was only a practical proxy. Do not conflate the two.
+- Gate codes (spec §10.1): every gap is `0` wall (`SPLIT`), `1` cross (`CROSS`, brush `c`) or `2`
+  parallel (`JOIN`, brush `p`); border gaps are `0`. A kolam = two grids of these digits.
+- 4-gate model only: a dot has 4 gates (above, right, below, left) and links run along rows and
+  columns. Diagonal links were tried and removed — do not add them back. Diagonal-looking kolams,
+  if needed, come from a diamond dot layout (the grid turned 45°).
+- Drawing primitives (spec §10): 21 shapes around one dot (6 crossing, 5 parallel, 10 mixed).
+  Crossing look is final. Parallel is a **capsule**: straight walls 0.75 from the dots and round
+  ends/corners of the same radius, as thick and round as a crossing loop, no pinch at gaps
+  (`geometry.capsule_points`); 4 dots whose 4 gaps are all parallel form a filled box (inner loop
+  not drawn, `geometry.is_box_hole`). Mixed (crossing + parallel at one dot): the dot is drawn
+  like a tube end, so the wall runs straight into the ✕, leaning in to 0.5 right at the ✕ so it
+  has room (spec §10.5). `geometry.drawn()` is what render.py and check_geometry use; the studio
+  draws the same through `kolam_studio/src/kolam/drawn.ts` (a port; keep them in step). One rule behind it all: the
+  line stays 0.75 from its dots and runs, and leaves only to cross at a crossing gap.
+  Drawing changes never change labels, programs or gate codes.
+- Horns (spec §10.6): set no gate; `geometry.drawn()` grows each one out of the line in front of its
+  dot with a weight that fades smoothly (no lump). Size follows the drawing: pointing at an empty
+  spot or off the grid → crescent, tip on that spot (reach 2.0); pointing at a used dot → short
+  (1.05). Shapes live in `brushes.json` `HORN.grow`. Unused dots are not drawn (so the generator
+  always crops). `observe` gives each horn as (dot, tip point); `decode` reads them back.
 - `kolam_press/compiler.py` is the relation compiler (gate model, hypergraph doc §8). One
   `CROSSING_LOOP` along a row must keep reproducing the notebook's `build_crossing_loop(n)`
   (reference copy in `tests/test_kolam_press.py`).
@@ -103,7 +127,10 @@ cd kolam_studio && npm install && npm run dev        # brush drawing UI on http:
 - Code: new generator / training code lives outside `archive/`. Never import from `archive/`.
 - `kolam_studio/src/kolam/` mirrors `kolam_press` (hypergraph, DSL, compiler). Python is the
   source of truth: when the brush model changes, change both and check that both compile the
-  same programs to the same canonical text and traced strokes.
+  same programs to the same canonical text and traced strokes. The same goes for drawing:
+  `kolam_studio/src/kolam/drawn.ts` must draw what `geometry.drawn()` draws (spec §10).
+- Free drawing vs dataset labels: `strict=True` (default) enforces every label rule; the studio
+  uses `strict=False`, which only refuses what cannot be drawn (`hypergraph.problems`).
 - When adding generator code: structure-first per hypergraph doc §5
   (grid → relations → compose → validate → compile → render). Put `CROSSING_LOOP` /
   `HORN` / `PARALLEL_LOOP` compilers where both TS engine and Python exporter can

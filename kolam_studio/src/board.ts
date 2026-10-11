@@ -45,8 +45,8 @@ export class Board {
     this.label = label
   }
 
-  /** Fit the dot grid (rows x cols) into the board. */
-  layout(rows: number, cols: number): void {
+  /** Fit the dot grid (rows x cols), plus `pad` lattice units around it, into the board. */
+  layout(rows: number, cols: number, pad = 0): void {
     const dpr = window.devicePixelRatio || 1
     const w = this.canvas.clientWidth
     const h = this.canvas.clientHeight
@@ -62,7 +62,7 @@ export class Board {
     this.rows = rows
     this.cols = cols
     const usableH = Math.max(h - LABEL_RESERVE, 1)
-    this.s = Math.max(4, Math.min((w * 0.84) / (2 * cols), (usableH * 0.84) / (2 * rows)))
+    this.s = Math.max(4, Math.min((w * 0.84) / (2 * cols + 2 * pad), (usableH * 0.84) / (2 * rows + 2 * pad)))
     this.ox = (w - 2 * cols * this.s) / 2
     this.oy = LABEL_RESERVE + (usableH - 2 * rows * this.s) / 2
   }
@@ -88,12 +88,14 @@ export class Board {
     ctx.drawImage(this.base, 0, 0, this.w, this.h)
   }
 
-  dots(colour = CHALK.main, r = 4): void {
+  /** Grid dots; `only` ("r,c" keys) limits them to the dots in use. */
+  dots(colour = CHALK.main, r = 4, only?: Set<string>): void {
     const { ctx } = this
     ctx.globalAlpha = 1
     ctx.fillStyle = colour
     for (let i = 0; i < this.rows; i++)
       for (let j = 0; j < this.cols; j++) {
+        if (only && !only.has(`${i},${j}`)) continue
         const [x, y] = this.px([2 * i + 1, 2 * j + 1])
         ctx.beginPath()
         ctx.arc(x, y, r, 0, Math.PI * 2)
@@ -186,9 +188,9 @@ export class Board {
 }
 
 /** Sample a closed chained quadratic Bezier (kolam stroke) into pixel polylines, one per control point. */
-export function bezierSegments(board: Board, P: Point[]): XY[][] {
+export function bezierSegments(board: Board, P: (Point | XY)[]): XY[][] {
   const k = P.length
-  const mid = (a: Point, b: Point): XY => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+  const mid = (a: Point | XY, b: Point | XY): XY => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
   const out: XY[][] = []
   for (let i = 0; i < k; i++) {
     const a = board.px(mid(P[(i - 1 + k) % k], P[i]))

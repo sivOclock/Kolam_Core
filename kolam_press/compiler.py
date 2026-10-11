@@ -6,7 +6,7 @@ the curve travels diagonally from gate to gate; each gate is CROSS, JOIN or SPLI
 
     CROSSING_LOOP  -> CROSS on the gap between consecutive dots
     PARALLEL_LOOP  -> JOIN  on the gap between consecutive dots
-    HORN(A -> B)   -> JOIN  on the A-B gap + a tip template replacing B's far-side turn
+    HORN(A, dir)   -> no gate; a tip that geometry.drawn() grows out of the line in front of A
 
 Every trace is a closed stroke; `build_crossing_loop(n)` from the notebook is
 exactly the trace of one CROSSING_LOOP along a row (tests/test_kolam_press.py).
@@ -15,10 +15,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .hypergraph import Hypergraph, KolamError, Relation
-from .spec import (CROSS, CROSSING_LOOP, HORN, JOIN, PARALLEL_LOOP, PLAIN_HORN, LEFT_HORN,
-                   RIGHT_HORN, SPLIT, Point, Vertex, gate_between, gate_flip, horn_far_turn,
-                   horn_frame, horn_tip_points, is_gate, is_h_gate, loop_gate_state, to_lattice)
+from .hypergraph import Hypergraph, KolamError, Relation, from_gates, horn_is_long
+from .spec import (CROSS, HORN, HORN_DIRS, HORN_VARIANTS, SPLIT, Point, Vertex, gate_between, gate_flip,
+                   horn_target, horn_tip, loop_gate_state, to_lattice)
 
 DIRS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
 
@@ -26,11 +25,11 @@ DIRS = ((1, 1), (1, -1), (-1, 1), (-1, -1))
 @dataclass
 class HornTip:
     rel: int
-    base: Vertex
-    tip_dot: Vertex
+    dot: Vertex
+    dir: str
     variant: str
-    turn: tuple[Point, Point, Point]   # (left gate, far gate, right gate) of the tip dot
-    points: list[Point]                 # control points that replace the far gate
+    long: bool                          # crescent into an empty spot, else short (§10.6)
+    point: tuple[float, float]          # lattice position of the sharp tip
 
 
 @dataclass
@@ -55,8 +54,8 @@ class Compiled:
         return sorted(g for g, (s, _) in self.config.gates.items() if s == CROSS)
 
     @property
-    def tip_points(self) -> list[Point]:
-        return [t.points[0] for t in self.config.tips]
+    def tip_points(self) -> list[tuple[float, float]]:
+        return [t.point for t in self.config.tips]
 
     def sequence_text(self) -> str:
         return "\n---\n".join(" → ".join(f"[{a},{b}]" for a, b in s + s[:1]) for s in self.strokes)
@@ -69,9 +68,8 @@ def build_config(h: Hypergraph) -> Config:
             cfg.dot_rels.setdefault(v, []).append(i)
         cfg.ring_dots.update(r.vertices)
         if r.type == HORN:
-            a, b = r.vertices
-            cfg.gates[gate_between(a, b)] = (JOIN, i)
-            cfg.tips.append(HornTip(i, a, b, r.variant, horn_far_turn(a, b), horn_tip_points(a, b, r.variant)))
+            v, long = r.vertices[0], horn_is_long(h, r)
+            cfg.tips.append(HornTip(i, v, r.dir, r.variant, long, horn_tip(v, r.dir, r.variant, long)))
         else:
             state = loop_gate_state(r.type)
             for a, b in r.edges():
@@ -140,103 +138,41 @@ def _turn_owner(cfg: Config, g: Point, p: Point, q: Point) -> int:
     return best
 
 
-def apply_tips(cfg: Config, strokes: list[list[Point]]) -> tuple[list[list[Point]], list[list[int]]]:
-    out, owners = [], []
-    # two horns can share a far gap (tip dots facing each other), so key by the whole turn
-    tips = {(t.turn[1], frozenset((t.turn[0], t.turn[2]))): t for t in cfg.tips}
-    for s in strokes:
-        k = len(s)
-        pts, own = [], []
-        for i, g in enumerate(s):
-            p, q = s[i - 1], s[(i + 1) % k]
-            t = tips.get((g, frozenset((p, q))))
-            if t is not None:
-                pts += t.points
-                own += [t.rel] * len(t.points)
-            else:
-                pts.append(g)
-                own.append(_turn_owner(cfg, g, p, q))
-        out.append(pts)
-        owners.append(own)
-    return out, owners
-
-
 def compile_hypergraph(h: Hypergraph, check: bool = True, strict: bool = True) -> Compiled:
     """strict: the hypergraph must be a dataset label (decodes back exactly); otherwise any free
     drawing that can be drawn (hypergraph.problems)."""
     if check:
         h.check(strict)
     cfg = build_config(h)
-    raw = trace(cfg)
-    strokes, owners = apply_tips(cfg, raw)
-    applied = sum(len(s) for s in strokes) - sum(len(s) for s in raw)
-    if applied != sum(len(t.points) - 1 for t in cfg.tips):
-        raise KolamError("a horn tip was not placed")
+    strokes = trace(cfg)
+    owners = [[_turn_owner(cfg, g, s[i - 1], s[(i + 1) % len(s)]) for i, g in enumerate(s)] for s in strokes]
     return Compiled(h, cfg, strokes, owners)
 
 
 # ------------------------------------------------------------------ decoding
-def observe(cfg: Config) -> tuple[dict[Point, str], dict[Point, Vertex]]:
-    """What an image shows: the state of every non-SPLIT gate, and each tip point with its dot."""
-    return ({g: s for g, (s, _) in cfg.gates.items()},
-            {t.points[0]: t.tip_dot for t in cfg.tips})
+def observe(cfg: Config) -> tuple[dict[Point, str], list[tuple[Vertex, tuple[float, float]]]]:
+    """What an image shows: the state of every non-SPLIT gate, and each horn as (the dot whose line
+    it grows out of, where its tip is)."""
+    return {g: s for g, (s, _) in cfg.gates.items()}, [(t.dot, t.point) for t in cfg.tips]
 
 
-def _gate_dots(g: Point) -> tuple[Vertex, Vertex]:
-    if is_h_gate(g):
-        a, b = (g[0], g[1] - 1), (g[0], g[1] + 1)
-    else:
-        a, b = (g[0] - 1, g[1]), (g[0] + 1, g[1])
-    return ((a[0] - 1) // 2, (a[1] - 1) // 2), ((b[0] - 1) // 2, (b[1] - 1) // 2)
-
-
-def decode(rows: int, cols: int, gates: dict[Point, str], tips: dict[Point, Vertex]) -> Hypergraph:
-    """Rebuild the canonical hypergraph from observed gate states and tips."""
-    rels: list[Relation] = []
-    horn_gates = set()
-    for tp, b in tips.items():
-        joins = [g for g in _dot_gates(b) if gates.get(g) == JOIN]
-        if len(joins) != 1:
-            raise KolamError(f"tip at {tp} has {len(joins)} joined gaps on its dot")
-        g = joins[0]
-        x, y = _gate_dots(g)
-        a = x if y == b else y
-        o, f, l = horn_frame(a, b)
-        off = (tp[0] - o[0], tp[1] - o[1])
-        variant = {f: PLAIN_HORN, (f[0] + l[0], f[1] + l[1]): LEFT_HORN,
-                   (f[0] - l[0], f[1] - l[1]): RIGHT_HORN}.get(off)
-        if variant is None:
-            raise KolamError(f"tip at {tp} does not match a horn template")
-        horn_gates.add(g)
-        rels.append(Relation(HORN, (a, b), variant))
-    for state, rtype in ((CROSS, CROSSING_LOOP), (JOIN, PARALLEL_LOOP)):
-        adj: dict[Vertex, list[Vertex]] = {}
-        for g, s in gates.items():
-            if s == state and g not in horn_gates:
-                a, b = _gate_dots(g)
-                adj.setdefault(a, []).append(b)
-                adj.setdefault(b, []).append(a)
-        seen: set = set()
-        for start in sorted(adj):
-            if start in seen:
-                continue
-            comp, stack = [], [start]
-            while stack:
-                v = stack.pop()
-                if v in seen:
-                    continue
-                seen.add(v)
-                comp.append(v)
-                stack += adj[v]
-            if any(len(adj[v]) > 2 for v in comp):
-                raise KolamError(f"{rtype} gaps branch at {[list(v) for v in comp if len(adj[v]) > 2]}")
-            ends = [v for v in comp if len(adj[v]) == 1]
-            closed = not ends
-            cur = min(ends) if ends else min(comp)
-            order, prev = [cur], None
-            while len(order) < len(comp):
-                nxt = [w for w in adj[cur] if w != prev and w not in order]
-                prev, cur = cur, min(nxt)
-                order.append(cur)
-            rels.append(Relation(rtype, tuple(order), None, closed))
-    return Hypergraph(rows, cols, tuple(rels)).canonical()
+def decode(rows: int, cols: int, gates: dict[Point, str],
+           tips: list[tuple[Vertex, tuple[float, float]]]) -> Hypergraph:
+    """Rebuild the canonical hypergraph from observed gate states and horns (dot, tip position)."""
+    loops = from_gates(rows, cols, gates)
+    rels = list(loops.relations)
+    # horns: the tip's place relative to its dot gives direction, variant and size; the size must then
+    # agree with the dots in use (long exactly when the spot it points at is empty)
+    horns = []
+    for v, tp in tips:
+        cs = [(v, d, var, long) for d in HORN_DIRS for var in HORN_VARIANTS for long in (True, False)
+              if max(abs(x - y) for x, y in zip(horn_tip(v, d, var, long), tp)) < 1e-6]
+        if len(cs) != 1:
+            raise KolamError(f"tip at {tp} on dot {list(v)} matches {len(cs)} horns")
+        horns.append(cs[0])
+    used = {v for r in rels for v in r.vertices} | {v for v, *_ in horns}
+    for v, d, var, long in horns:
+        if long != (horn_target(v, d) not in used):
+            raise KolamError(f"horn on {list(v)} pointing {d}: its size does not match the dots in use")
+        rels.append(Relation(HORN, (v,), var, False, d))
+    return from_gates(rows, cols, gates, [r for r in rels if r.type == HORN])

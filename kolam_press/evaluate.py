@@ -120,7 +120,7 @@ def evaluate(dataset: str | Path, rerender_n: int = 200, iso_n: int = 3000, log=
             stats[r.type] += 1
             if r.type == HORN:
                 dist["horn_variant"][r.variant] += 1
-                dist["brush_dots"]["HORN"] += 2
+                dist["brush_dots"]["HORN"] += 1
             else:
                 dist["loop_len"][len(r.vertices)] += 1
                 dist["brush_dots"][r.type] += len(r.vertices)

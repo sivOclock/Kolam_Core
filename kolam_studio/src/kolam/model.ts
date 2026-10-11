@@ -9,12 +9,14 @@ export type Point = [number, number] // lattice point [li, lj]
 export type BrushType = 'CROSSING_LOOP' | 'PARALLEL_LOOP' | 'HORN'
 export type HornVariant = 'PLAIN_HORN' | 'LEFT_HORN' | 'RIGHT_HORN'
 export type GateState = 'CROSS' | 'JOIN' | 'SPLIT'
+export type HornDir = 'N' | 'E' | 'S' | 'W'
 
 export interface Relation {
   type: BrushType
-  vertices: Vertex[]
+  vertices: Vertex[] // a horn has exactly one
   variant?: HornVariant // horns only
   closed?: boolean // loops only: last dot links back to the first
+  dir?: HornDir // horns only: where the tip points
 }
 
 export interface Hypergraph {
@@ -26,6 +28,7 @@ export interface Hypergraph {
 export class KolamError extends Error {}
 
 export const HORN_VARIANTS: HornVariant[] = ['PLAIN_HORN', 'LEFT_HORN', 'RIGHT_HORN']
+export const HORN_DIRS: HornDir[] = ['N', 'E', 'S', 'W']
 const TYPE_ORDER: Record<BrushType, number> = { CROSSING_LOOP: 0, PARALLEL_LOOP: 1, HORN: 2 }
 export const SHORT: Record<string, string> = {
   CROSSING_LOOP: 'c',
@@ -55,26 +58,39 @@ export function gateFlip(state: GateState, g: Point): [number, number] {
   return [f[0], f[1]]
 }
 
-export function hornFrame(a: Vertex, b: Vertex) {
-  const fwd: [number, number] = [b[0] - a[0], b[1] - a[1]]
-  return { o: toLattice(b), f: fwd, l: leftOf(fwd) }
+export const hornDir = (d: HornDir): [number, number] => {
+  const f = spec.relations.HORN.dirs[d]
+  return [f[0], f[1]]
+}
+export const hornShape = (long: boolean) => spec.relations.HORN.grow[long ? 'long' : 'short']
+/** +1 LEFT_HORN, 0 PLAIN_HORN, -1 RIGHT_HORN */
+export const hornCurl = (variant: HornVariant): number => spec.relations.HORN.variants[variant]
+
+/** The spot a horn on dot v points at (may be off the grid). */
+export function hornTarget(v: Vertex, d: HornDir): Vertex {
+  const f = hornDir(d)
+  return [v[0] + f[0], v[1] + f[1]]
 }
 
-export function hornTipPoints(a: Vertex, b: Vertex, variant: HornVariant): Point[] {
-  const { o, f, l } = hornFrame(a, b)
-  const tpl = spec.relations.HORN.tip_templates[variant] as number[][]
-  return tpl.map(([u, v]) => [o[0] + u * f[0] + v * l[0], o[1] + u * f[1] + v * l[1]])
+/** A horn is a long crescent when the spot it points at holds no used dot, else short (spec §10.6). */
+export function hornIsLong(h: Hypergraph, r: Relation): boolean {
+  const t = hornTarget(r.vertices[0], r.dir!)
+  return !h.relations.some((x) => x.vertices.some((v) => v[0] === t[0] && v[1] === t[1]))
 }
 
-/** (left gate, far gate, right gate) of B: the turn a tip template replaces. */
-export function hornFarTurn(a: Vertex, b: Vertex): [Point, Point, Point] {
-  const { o, f, l } = hornFrame(a, b)
-  return [
-    [o[0] + l[0], o[1] + l[1]],
-    [o[0] + f[0], o[1] + f[1]],
-    [o[0] - l[0], o[1] - l[1]],
-  ]
+/** Lattice point of a horn's tip: reach along fwd, turned by the curl. */
+export function hornTip(v: Vertex, d: HornDir, variant: HornVariant, long: boolean): [number, number] {
+  const o = toLattice(v)
+  const f = hornDir(d)
+  const l = leftOf(f)
+  const sh = hornShape(long)
+  const a = hornCurl(variant) * sh.curl
+  const cu = sh.reach * Math.cos(a)
+  const cv = sh.reach * Math.sin(a)
+  return [o[0] + cu * f[0] + cv * l[0], o[1] + cu * f[1] + cv * l[1]]
 }
+
+export { leftOf }
 
 // ---------------------------------------------------------------- ordering (Python tuple order)
 type Cmp = number
@@ -95,15 +111,17 @@ function cmpRel(a: Relation, b: Relation): Cmp {
     cmpNum(TYPE_ORDER[a.type], TYPE_ORDER[b.type]) ||
     (va < vb ? -1 : va > vb ? 1 : 0) ||
     cmpNum(Number(!!a.closed), Number(!!b.closed)) ||
-    cmpVerts(a.vertices, b.vertices)
+    cmpVerts(a.vertices, b.vertices) ||
+    ((a.dir ?? '') < (b.dir ?? '') ? -1 : (a.dir ?? '') > (b.dir ?? '') ? 1 : 0)
   )
 }
-const key = (r: Relation) => JSON.stringify([r.type, r.variant ?? null, !!r.closed, r.vertices])
+const key = (r: Relation) => JSON.stringify([r.type, r.variant ?? null, !!r.closed, r.vertices, r.dir ?? null])
 
 // ---------------------------------------------------------------- canonical labels
 /** A loop's start dot and direction are invisible in an image, so they are normalised away. */
 export function canonicalRelation(r: Relation): Relation {
-  if (r.type === 'HORN') return { type: r.type, vertices: r.vertices.map((v) => [...v] as Vertex), variant: r.variant }
+  if (r.type === 'HORN')
+    return { type: r.type, vertices: r.vertices.map((v) => [...v] as Vertex), variant: r.variant, dir: r.dir }
   const vs = r.vertices
   let best: Vertex[]
   if (!r.closed) {
@@ -120,13 +138,92 @@ export function canonicalRelation(r: Relation): Relation {
   return { type: r.type, vertices: best.map((v) => [...v] as Vertex), closed: !!r.closed }
 }
 
-export function canonical(h: Hypergraph): Hypergraph {
+function tidy(rows: number, cols: number, rels: Relation[]): Hypergraph {
   const seen = new Map<string, Relation>()
-  for (const r of h.relations) {
+  for (const r of rels) {
     const c = canonicalRelation(r)
     seen.set(key(c), c)
   }
-  return { rows: h.rows, cols: h.cols, relations: [...seen.values()].sort(cmpRel) }
+  return { rows, cols, relations: [...seen.values()].sort(cmpRel) }
+}
+
+/** The label of this kolam's picture: loops re-read from the gaps they set (hypergraph.canonical).
+ *  Different programs that draw the same picture get the same canonical label. */
+export function canonical(h: Hypergraph): Hypergraph {
+  if (problems(h).some((p) => p.level === 'error')) return tidy(h.rows, h.cols, h.relations) // cannot be drawn
+  const gates = new Map<string, GateState>()
+  for (const r of h.relations)
+    if (r.type !== 'HORN')
+      for (const [a, b] of edges(r)) {
+        const g = gateBetween(a, b)
+        if (!gates.has(`${g[0]},${g[1]}`)) gates.set(`${g[0]},${g[1]}`, loopGateState(r.type))
+      }
+  return fromGates(h.rows, h.cols, gates, h.relations.filter((r) => r.type === 'HORN'))
+}
+
+const STEPS: [number, number][] = [[-1, 0], [0, 1], [1, 0], [0, -1]] // N E S W
+
+/** Canonical hypergraph from gap states ("li,lj" -> state) and horns: port of hypergraph.from_gates.
+ *  A line goes on through a dot with 2 same-state gaps (corners too), straight through a dot with 3
+ *  or 4 (the side branch is its own line), and stops before visiting a dot twice. */
+export function fromGates(rows: number, cols: number, gates: Map<string, GateState>, horns: Relation[]): Hypergraph {
+  const rels: Relation[] = []
+  for (const [state, rtype] of [['CROSS', 'CROSSING_LOOP'], ['JOIN', 'PARALLEL_LOOP']] as const) {
+    const nb = new Map<string, Set<number>>()
+    const add = (v: Vertex, d: number) => nb.set(s(v), (nb.get(s(v)) ?? new Set()).add(d))
+    for (const [k, st] of gates) {
+      if (st !== state) continue
+      const [li, lj] = k.split(',').map(Number)
+      if (li % 2) {
+        add([(li - 1) / 2, lj / 2 - 1], 1)
+        add([(li - 1) / 2, lj / 2], 3)
+      } else {
+        add([li / 2 - 1, (lj - 1) / 2], 2)
+        add([li / 2, (lj - 1) / 2], 0)
+      }
+    }
+    const pair = (v: Vertex, d: number): number | null => {
+      const ds = nb.get(s(v))!
+      if (ds.size === 2) return [...ds].find((x) => x !== d)!
+      return ds.size > 2 && ds.has((d + 2) % 4) ? (d + 2) % 4 : null
+    }
+    const used = new Set<string>()
+    const edge = (v: Vertex, d: number): [Vertex, string] => {
+      const w: Vertex = [v[0] + STEPS[d][0], v[1] + STEPS[d][1]]
+      return [w, [s(v), s(w)].sort().join('')]
+    }
+    const trace = (v: Vertex, d0: number): [Vertex[], boolean] => {
+      const chain: Vertex[] = [v]
+      let cur = v
+      let d = d0
+      for (;;) {
+        const [w, e] = edge(cur, d)
+        if (chain.some((x) => x[0] === w[0] && x[1] === w[1])) {
+          if (w[0] === v[0] && w[1] === v[1] && chain.length >= 4 && pair(v, (d + 2) % 4) === d0) {
+            used.add(e)
+            return [chain, true]
+          }
+          return [chain, false] // would visit a dot twice: stop here
+        }
+        used.add(e)
+        chain.push(w)
+        const nd = pair(w, (d + 2) % 4)
+        if (nd === null || used.has(edge(w, nd)[1])) return [chain, false]
+        cur = w
+        d = nd
+      }
+    }
+    const all: [Vertex, number][] = []
+    for (const [k, ds] of nb) for (const d of ds) all.push([k.slice(1, -1).split(',').map(Number) as Vertex, d])
+    const order = (a: [Vertex, number], b: [Vertex, number]) => cmpNum(a[0][0], b[0][0]) || cmpNum(a[0][1], b[0][1]) || cmpNum(a[1], b[1])
+    const ends = all.filter(([v, d]) => pair(v, d) === null).sort(order)
+    for (const [v, d] of [...ends, ...all.sort(order)])
+      if (!used.has(edge(v, d)[1])) {
+        const [chain, closed] = trace(v, d)
+        rels.push({ type: rtype, vertices: chain, closed })
+      }
+  }
+  return tidy(rows, cols, [...rels, ...horns])
 }
 
 export function edges(r: Relation): [Vertex, Vertex][] {
@@ -154,9 +251,7 @@ export function problems(h: Hypergraph): Problem[] {
   }
   const inside = (v: Vertex) => v[0] >= 0 && v[0] < h.rows && v[1] >= 0 && v[1] < h.cols
   const gateState = new Map<string, [GateState, number]>() // straight-step gap -> (state, first relation)
-  const loopMembers: Record<string, Map<string, number>> = { CROSSING_LOOP: new Map(), PARALLEL_LOOP: new Map() }
-  const hornTargets = new Map<string, number>()
-  const tips: [Point, number][] = []
+  const horns: [number, Relation][] = []
   h.relations.forEach((r, i) => {
     const name = `${SHORT[r.type === 'HORN' ? r.variant ?? 'PLAIN_HORN' : r.type]}#${i}`
     const err = (m: string, level: Problem['level'] = 'error') => out.push({ rel: i, level, message: `${name}: ${m}` })
@@ -164,15 +259,16 @@ export function problems(h: Hypergraph): Problem[] {
     if (bad.length) return err(`dots ${bad.map(s).join(' ')} are outside the ${h.rows}x${h.cols} grid`)
     if (new Set(r.vertices.map(s)).size !== r.vertices.length) return err('repeated dot')
     if (r.type === 'HORN') {
-      if (!r.variant || !HORN_VARIANTS.includes(r.variant) || r.vertices.length !== 2 || r.closed)
-        return err('a horn needs exactly 2 dots and a variant')
-      if (!adjacent(r.vertices[0], r.vertices[1])) return err(`horn dots ${s(r.vertices[0])} and ${s(r.vertices[1])} must be neighbours`)
-    } else {
-      if (r.vertices.length < 2) return err('a loop needs at least 2 dots')
-      if (r.closed && (r.vertices.length < 4 || !adjacent(r.vertices[r.vertices.length - 1], r.vertices[0])))
-        return err('a closed ring needs >= 4 dots with the last next to the first')
+      if (!r.variant || !HORN_VARIANTS.includes(r.variant) || !r.dir || !HORN_DIRS.includes(r.dir) ||
+          r.vertices.length !== 1 || r.closed)
+        return err('a horn is one dot, a direction (N/E/S/W) and a variant')
+      horns.push([i, r])
+      return
     }
-    const state: GateState = r.type === 'HORN' ? 'JOIN' : loopGateState(r.type)
+    if (r.vertices.length < 2) return err('a loop needs at least 2 dots')
+    if (r.closed && (r.vertices.length < 4 || !adjacent(r.vertices[r.vertices.length - 1], r.vertices[0])))
+      return err('a closed ring needs >= 4 dots with the last next to the first')
+    const state = loopGateState(r.type)
     for (const [a, b] of edges(r)) {
       if (!adjacent(a, b)) {
         err(`${s(a)} and ${s(b)} are not neighbours (diagonal gaps have no gate)`)
@@ -181,35 +277,37 @@ export function problems(h: Hypergraph): Problem[] {
       const g = JSON.stringify(gateBetween(a, b))
       const have = gateState.get(g)
       if (have && have[0] !== state) err(`the gap between ${s(a)} and ${s(b)} is already a ${have[0]} of #${have[1]}; one gap can't be both`)
-      else if (have) err(`the gap between ${s(a)} and ${s(b)} is also used by #${have[1]}`, 'label')
       if (!have) gateState.set(g, [state, i])
     }
-    if (r.type !== 'HORN') {
-      for (const v of r.vertices) {
-        const m = loopMembers[r.type]
-        if (m.has(s(v))) err(`dot ${s(v)} is already in #${m.get(s(v))} (same-brush loops sharing a dot)`, 'label')
-        m.set(s(v), i)
-      }
-    } else {
-      const [a, b] = r.vertices
-      if (hornTargets.has(s(b))) err(`dot ${s(b)} is already the tip of horn #${hornTargets.get(s(b))}`)
-      hornTargets.set(s(b), i)
-      const p = hornTipPoints(a, b, r.variant!)[0]
-      for (const [q, j] of tips)
-        if ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= 1) err(`tip too close to the tip of horn #${j}`)
-      tips.push([p, i])
-    }
   })
-  for (const [b, i] of hornTargets) {
-    const users = h.relations.flatMap((r, j) => (j !== i && r.vertices.some((v) => s(v) === b) ? [j] : []))
-    if (users.length) out.push({ rel: i, level: 'error', message: `horn #${i}: tip dot ${b} must not be used by #${users.join(', #')}` })
+  // horns: grown out of the wall in front of their dot, tips apart
+  const seen = new Map<string, number>()
+  const tips: [[number, number], number][] = []
+  for (const [i, r] of horns) {
+    const v = r.vertices[0]
+    const name = `${SHORT[r.variant!]}#${i}`
+    const err = (m: string) => out.push({ rel: i, level: 'error', message: `${name}: ${m}` })
+    const k = `${s(v)}${r.dir}`
+    if (seen.has(k)) {
+      err(`dot ${s(v)} already has a horn pointing ${r.dir} (#${seen.get(k)})`)
+      continue
+    }
+    seen.set(k, i)
+    const g = gateState.get(JSON.stringify(gateBetween(v, hornTarget(v, r.dir!))))
+    if (g) err(`points ${r.dir} along the brush line of #${g[1]}; a horn points at a wall (a gap no loop crosses)`)
+    const p = hornTip(v, r.dir!, r.variant!, hornIsLong(h, r))
+    for (const [q, j] of tips) if ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= 1) err(`tip too close to the tip of horn #${j}`)
+    tips.push([p, i])
   }
   return out
 }
 
 /** strict: every dataset rule (decodes to exactly this label); otherwise only what cannot be drawn. */
 export function validate(h: Hypergraph, strict = true): Problem[] {
-  return problems(h).filter((p) => strict || p.level === 'error')
+  const out = problems(h)
+  if (strict && !out.length && JSON.stringify(tidy(h.rows, h.cols, h.relations)) !== JSON.stringify(canonical(h)))
+    out.push({ rel: -1, level: 'label', message: 'not the canonical label of its picture (loops are read off the gaps)' })
+  return out
 }
 
 // ---------------------------------------------------------------- brush DSL (dsl.py)
@@ -228,9 +326,8 @@ function waypoints(vs: Vertex[], closed: boolean): Vertex[] {
 export function formatProgram(h: Hypergraph): string {
   const lines = [`grid(${h.rows}, ${h.cols})`]
   for (const r of canonical(h).relations) {
-    const pts = r.type === 'HORN' ? r.vertices : waypoints(r.vertices, !!r.closed)
-    const name = SHORT[r.type === 'HORN' ? r.variant! : r.type]
-    lines.push(`${name}(${pts.map(s).join(',')})`)
+    if (r.type === 'HORN') lines.push(`${SHORT[r.variant!]}(${s(r.vertices[0])},${r.dir})`)
+    else lines.push(`${SHORT[r.type]}(${waypoints(r.vertices, !!r.closed).map(s).join(',')})`)
   }
   return lines.join('\n')
 }
@@ -274,20 +371,23 @@ export function parse(text: string, strict = true): Hypergraph {
       }
       if (!(fn in names)) throw new KolamError(`${where}: unknown brush '${fn}'; use c, p, h, hl, hr (or h0/h1/h2)`)
       const kind = names[fn]
+      if (HORN_VARIANTS.includes(kind as HornVariant)) {
+        const m = /^\s*\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]\s*,\s*([NESW])\s*$/.exec(args)
+        if (!m)
+          throw new KolamError(
+            `${where}: a horn is one dot and a direction, like ${fn}([1,1],N) (N/E/S/W); the old two-dot horn h(A,B) is now p(A,B) + h(B,dir)`,
+          )
+        rels.push({ type: 'HORN', vertices: [[Number(m[1]), Number(m[2])]], variant: kind as HornVariant, dir: m[3] as HornDir })
+        continue
+      }
       const rest = args.replace(/\[\s*-?\d+\s*,\s*-?\d+\s*\]/g, '').replace(/[\s,]/g, '')
       if (rest) throw new KolamError(`${where}: expected dots like [row, col]`)
       const pts = [...args.matchAll(/\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]/g)].map((x) => [Number(x[1]), Number(x[2])] as Vertex)
-      if (HORN_VARIANTS.includes(kind as HornVariant)) {
-        if (pts.length !== 2) throw new KolamError(`${where}: a horn takes exactly two dots: base -> tip`)
-        if (!adjacent(pts[0], pts[1])) throw new KolamError(`${where}: horn dots ${s(pts[0])} and ${s(pts[1])} must be neighbours`)
-        rels.push({ type: 'HORN', vertices: pts, variant: kind as HornVariant })
-      } else {
-        if (pts.length < 2) throw new KolamError(`${where}: a loop brush needs at least two dots`)
-        const closed = pts.length > 2 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]
-        let dots = expand(pts, where)
-        if (closed) dots = dots.slice(0, -1)
-        rels.push({ type: kind as BrushType, vertices: dots, closed })
-      }
+      if (pts.length < 2) throw new KolamError(`${where}: a loop brush needs at least two dots`)
+      const closed = pts.length > 2 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1]
+      let dots = expand(pts, where)
+      if (closed) dots = dots.slice(0, -1)
+      rels.push({ type: kind as BrushType, vertices: dots, closed })
     }
   })
   if (!rels.length) throw new KolamError('empty program')

@@ -18,9 +18,9 @@ import numpy as np
 from .compiler import compile_hypergraph
 from .dsl import format_program
 from .geometry import check_geometry
-from .hypergraph import Hypergraph, Relation, transform_relation, validate
+from .hypergraph import Hypergraph, Relation, gate_codes, transform_relation, validate
 from .render import Style, random_style, render_kolam, render_panel
-from .spec import CROSSING_LOOP, HORN, HORN_VARIANTS, PARALLEL_LOOP, gate_between
+from .spec import CROSSING_LOOP, HORN, HORN_DIRS, HORN_VARIANTS, PARALLEL_LOOP, gate_between, horn_target
 
 GROUPS = {
     "none": ["id"],
@@ -47,11 +47,14 @@ class GenConfig:
     pure_prob: float = 0.15       # single-brush kolams
     ring_prob: float = 0.15       # loop proposal is a closed rectangle ring (free mode only)
     mix_prob: float = 0.3         # crossing and parallel loops may share dots
+    share_prob: float = 0.35      # a loop may run through dots of loops of its own brush ('+' and 'T' dots)
     straight_bias: float = 0.65
+    max_horn_frac: float = 0.2    # at most this many horns per grid dot (they are cheap to add)
     max_chain: int = 8
     coverage: tuple = (0.7, 1.0)  # fraction of dots inside the kolam
     fill_prob: float = 0.85       # try to cover leftover bare dots
-    crop_prob: float = 0.85       # drop border rows/cols with no kolam on them
+    crop_prob: float = 1.0        # drop border rows/cols with no kolam on them (unused dots are not
+                                  # drawn, so an uncropped grid's size could not be read from the image)
     max_proposals: int = 300
     image_size: int = 384
     augment: bool = True
@@ -63,7 +66,7 @@ class _State:
         self.rels: list[Relation] = []
         self.gates: set = set()
         self.members = {CROSSING_LOOP: set(), PARALLEL_LOOP: set()}
-        self.tips: set = set()
+        self.horns: set = set()        # (dot, dir)
         self.used: set = set()
 
     def add(self, rels):
@@ -73,7 +76,7 @@ class _State:
             for a, b in r.edges():
                 self.gates.add(gate_between(a, b))
             if r.type == HORN:
-                self.tips.add(r.vertices[1])
+                self.horns.add((r.vertices[0], r.dir))
             else:
                 self.members[r.type].update(r.vertices)
 
@@ -112,12 +115,11 @@ def brush_line_components(rels) -> tuple[bool, int]:
     return forest, len({find(v) for v in parent})
 
 
-def _loop_ok(st: _State, t: str, mix: bool):
+def _loop_ok(st: _State, t: str, mix: bool, share: bool = False):
     other = PARALLEL_LOOP if t == CROSSING_LOOP else CROSSING_LOOP
 
     def ok(v):
-        return (st.inside(v) and v not in st.members[t] and v not in st.tips
-                and (mix or v not in st.members[other]))
+        return st.inside(v) and (share or v not in st.members[t]) and (mix or v not in st.members[other])
     return ok
 
 
@@ -166,7 +168,7 @@ def _walk(rng, st: _State, start, want, ok, cfg: GenConfig, piece: dict):
 
 def _propose_chain(rng, st: _State, t: str, cfg: GenConfig):
     attach = st.tree and bool(st.used)
-    ok = _loop_ok(st, t, attach or rng.random() < cfg.mix_prob)
+    ok = _loop_ok(st, t, attach or rng.random() < cfg.mix_prob, rng.random() < cfg.share_prob)
     pool = [(r, c) for r in range(st.rows) for c in range(st.cols) if ok((r, c))]
     if attach:                 # tree mode: grow out of a dot of the existing kolam
         pool = [v for v in pool if v in st.used]
@@ -208,26 +210,20 @@ def _propose_ring(rng, st: _State, ok, cfg: GenConfig):
 
 
 def _propose_horn(rng, st: _State, target=None):
-    free = [(r, c) for r in range(st.rows) for c in range(st.cols) if (r, c) not in st.used]
+    """A horn on a dot of the kolam (or on the bare dot `target`), pointing at a wall of that dot."""
     if target is not None:
-        free = [target]
-    if not free:
+        pool = [target]
+    else:
+        pool = sorted(st.used) if st.used and (st.tree or rng.random() < 0.85) else \
+            [(r, c) for r in range(st.rows) for c in range(st.cols)]
+    if not pool:
         return None
     for _ in range(6):
-        b = free[rng.integers(len(free))]
-        bases = []
-        for s in STEPS:
-            a = (b[0] - s[0], b[1] - s[1])
-            if st.inside(a) and a not in st.tips and gate_between(a, b) not in st.gates:
-                bases.append(a)
-        attached = [a for a in bases if a in st.used]
-        if st.tree and st.used:
-            bases = attached
-        if not bases:
-            continue
-        pool = attached if attached and rng.random() < 0.75 else bases
-        a = pool[rng.integers(len(pool))]
-        return Relation(HORN, (a, b), HORN_VARIANTS[rng.integers(3)])
+        v = pool[rng.integers(len(pool))]
+        dirs = [d for d in HORN_DIRS if (v, d) not in st.horns
+                and gate_between(v, horn_target(v, d)) not in st.gates]
+        if dirs:
+            return Relation(HORN, (v,), HORN_VARIANTS[rng.integers(3)], False, dirs[rng.integers(len(dirs))])
     return None
 
 
@@ -265,7 +261,7 @@ def _crop(h: Hypergraph) -> Hypergraph:
         return h
     r0, r1 = min(v[0] for v in used), max(v[0] for v in used)
     c0, c1 = min(v[1] for v in used), max(v[1] for v in used)
-    rels = tuple(Relation(r.type, tuple((v[0] - r0, v[1] - c0) for v in r.vertices), r.variant, r.closed)
+    rels = tuple(Relation(r.type, tuple((v[0] - r0, v[1] - c0) for v in r.vertices), r.variant, r.closed, r.dir)
                  for r in h.relations)
     return Hypergraph(r1 - r0 + 1, c1 - c0 + 1, rels).canonical()
 
@@ -276,7 +272,7 @@ def _propose_extension(rng, st: _State, v):
     for r in st.rels:
         if r.type == HORN or r.closed or v not in {*_nbrs(r.vertices[0]), *_nbrs(r.vertices[-1])}:
             continue
-        if v in st.members[r.type] or v in st.tips:
+        if v in st.members[r.type]:
             continue
         if r.vertices[-1] in _nbrs(v) and gate_between(r.vertices[-1], v) not in st.gates:
             opts.append((r, Relation(r.type, r.vertices + (v,))))
@@ -300,7 +296,7 @@ def _try_set(st: _State, ops, add: Relation, remove: Relation | None = None) -> 
         keep = [r for r in keep if r not in gone]
     new = sorted(_orbit(add, ops, st.rows, st.cols) - set(keep), key=Relation.sort_key)
     trial = keep + new
-    if validate(Hypergraph(st.rows, st.cols, tuple(trial))):
+    if validate(Hypergraph(st.rows, st.cols, tuple(trial)), strict=False):   # draws; made canonical at the end
         return False
     if st.tree and not brush_line_components(trial)[0]:
         return False
@@ -341,17 +337,18 @@ def sample_hypergraph(rng: np.random.Generator, cfg: GenConfig) -> tuple[Hypergr
         seed = _propose_seed(rng, st, loops[rng.integers(len(loops))], ops, cfg)
         if seed is not None:
             _try_set(st, ops, seed)
+    horn_cap = max(1, round(cfg.max_horn_frac * m * n))
     for _ in range(cfg.max_proposals):
         if st.coverage() >= target:
             break
         t = types[rng.choice(len(types), p=w / w.sum())]
-        if tree and not st.used and t == HORN:
+        if t == HORN and ((tree and not st.used) or len(st.horns) >= horn_cap):
             continue
         rel = _propose_horn(rng, st) if t == HORN else _propose_chain(rng, st, t, cfg)
         if rel is not None:
             _try_set(st, ops, rel)
     if rng.random() < cfg.fill_prob:
-        # cover leftover bare dots: grow a neighbouring chain, add a horn tip, or a 2-dot loop
+        # cover leftover bare dots: grow a neighbouring chain, put a horn on it, or a 2-dot loop
         allowed = [t for t, x in zip(types, w) if x > 0]
         bare = [(r, c) for r in range(m) for c in range(n) if (r, c) not in st.used]
         for i in rng.permutation(len(bare)):
@@ -365,8 +362,8 @@ def sample_hypergraph(rng: np.random.Generator, cfg: GenConfig) -> tuple[Hypergr
                 if v in st.used:
                     break
                 t = allowed[j]
-                if t == HORN:
-                    rel = _propose_horn(rng, st, target=v)
+                if t == HORN:   # a lone dot is its own piece, so not in tree mode
+                    rel = None if tree or len(st.horns) >= horn_cap else _propose_horn(rng, st, target=v)
                 else:
                     ok = _loop_ok(st, t, True)
                     nb = [u for u in _nbrs(v) if ok(u) and gate_between(u, v) not in st.gates
@@ -408,6 +405,7 @@ def generate_sample(index: int, seed: int, cfg: GenConfig, attempt: int = 0):
         "seed": key,
         "grid": {"rows": h.rows, "cols": h.cols},
         "program": format_program(h),
+        "gaps": gate_codes(h),
         "hypergraph": h.to_json(),
         "lattice_sequence": [[list(p) for p in s + s[:1]] for s in c.strokes],
         "stats": {"relations": len(h.relations), "strokes": geo["n_strokes"], "crossings": geo["n_crossings"],
