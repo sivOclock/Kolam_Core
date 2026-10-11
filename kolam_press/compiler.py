@@ -161,9 +161,11 @@ def apply_tips(cfg: Config, strokes: list[list[Point]]) -> tuple[list[list[Point
     return out, owners
 
 
-def compile_hypergraph(h: Hypergraph, check: bool = True) -> Compiled:
+def compile_hypergraph(h: Hypergraph, check: bool = True, strict: bool = True) -> Compiled:
+    """strict: the hypergraph must be a dataset label (decodes back exactly); otherwise any free
+    drawing that can be drawn (hypergraph.problems)."""
     if check:
-        h.check()
+        h.check(strict)
     cfg = build_config(h)
     raw = trace(cfg)
     strokes, owners = apply_tips(cfg, raw)

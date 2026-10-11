@@ -290,6 +290,13 @@ row reproduces the notebook's `build_crossing_loop(n)` exactly (tested for n = 2
 
 ### 8.4 Composition rules (what makes a label valid and unique)
 
+There are two levels (`hypergraph.problems`):
+- **Free drawing** (`strict=False`, used by `kolam_studio`): only what cannot be drawn is refused:
+  dots off the grid, steps between dots that are not 4-neighbours, one gap given two different
+  states, and broken horns (rules 5–6).
+- **Dataset label** (`strict=True`, the default; generator and evaluator): all rules below, so the
+  picture decodes back to exactly one label.
+
 | # | rule | why |
 |---|---|---|
 | 1 | Loops have ≥ 2 dots. A closed ring needs ≥ 4 dots, with the last dot next to the first. | the smallest cycle of 4-neighbours is a 2×2 square |

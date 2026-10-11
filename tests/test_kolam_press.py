@@ -91,7 +91,7 @@ def test_dsl_aliases_endpoints_and_rings():
     ("x([0,0],[0,1])", "unknown brush"),
     ("c([0,0],[0,1]); c([0,1],[1,1])", "same-brush"),
     ("c([0,0],[0,1]); h([1,1],[0,1])", "tip dot"),
-    ("c([0,0],[0,2]); p([0,1],[0,2])", "already used"),
+    ("c([0,0],[0,2]); p([0,1],[0,2])", "can.t be both"),
     ("grid(2,2); c([0,0],[0,3])", "outside"),
 ])
 def test_dsl_rejects_bad_programs(prog, msg):
@@ -180,3 +180,26 @@ def test_sampler_covers_all_brushes_and_symmetries():
 def test_relation_rejects_bad_json():
     h = Hypergraph(2, 2, (Relation("HORN", ((0, 0), (0, 1)), "UP_HORN"),))
     assert h.validate()
+
+
+# ------------------------------------------------------------------ free drawing (strict=False)
+@pytest.mark.parametrize("prog", [
+    "grid(3,3); p([0,0],[0,2]); p([0,1],[2,1])",           # same-brush loops sharing a dot
+    "grid(3,3); c([0,0],[0,2]); c([0,1],[2,1])",
+    "grid(2,3); c([0,0],[0,2]); c([0,1],[0,2])",           # two strokes on one gap, same state
+])
+def test_free_drawings_draw_cleanly(prog):
+    h = parse(prog, strict=False)
+    with pytest.raises(KolamError):
+        parse(prog)                                        # not a dataset label
+    g = check_geometry(compile_hypergraph(h, strict=False))
+    assert g["ok"], g["issues"]
+
+
+@pytest.mark.parametrize("prog,msg", [
+    ("c([0,0],[1,1])", "diagonal"),                        # diagonal dots share no gate
+    ("c([0,0],[0,2]); p([0,1],[0,2])", "can.t be both"),   # one gap, two states
+])
+def test_free_drawing_still_refuses_the_impossible(prog, msg):
+    with pytest.raises(KolamError, match=msg):
+        parse(prog, strict=False)

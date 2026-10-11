@@ -3,9 +3,10 @@
 Source of truth for semantics: `docs/hypergraph_kolams.md`. Read this first, follow it exactly.
 
 Current focus: data-generation pipeline + training the model (`todo.md`).
-The kolam engine / UI / slate-chalk design is archaic and out of scope — it lives
-in `archive/` (plus stale `README.md` sections describing it). Do not revive it,
-do not import from it, do not style new code to match it.
+The old kolam engine / UI lives in `archive/` and is out of scope: do not revive its code
+and never import from it. Its chalkboard look (board texture, wooden frame, chalk brush,
+Schoolbell labels, chalk palette) is reused on purpose by `kolam_studio/`, the brush
+drawing UI — keep new UI work consistent with that.
 
 ## What this project is
 
@@ -51,6 +52,8 @@ Kolam_labs/
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
 │   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
 │   └── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
+├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam
+│   └── src/kolam/                 # TS port of model + compiler; reads kolam_press/brushes.json
 ├── examples/*.kolam               # brush programs
 ├── tests/                         # pytest
 └── archive/                       # ARCHAIC — old engine, UI, slate-chalk design
@@ -89,14 +92,18 @@ python -m pytest tests -q                             # must stay green
 python -m kolam_press draw -f examples/showcase.kolam -o out.png --view panel
 python -m kolam_press generate -n 3000 -o data/kolams_v1 --preview 16   # data/ is gitignored
 python -m kolam_press evaluate data/kolams_v1         # writes report.md; exit 1 on any failure
+cd kolam_studio && npm install && npm run dev        # brush drawing UI on http://localhost:5173
 ```
-(The old `kolam_engine` npm app is archived — no `npm install` / `dev` / `build` workflow.)
+(The old `kolam_engine` npm app is archived; `kolam_studio/` is the only npm app.)
 
 ## Conventions for edits
 
 - Docs: only `docs/hypergraph_kolams.md` is active. Don't resurrect deleted doc names
   (`NORMAL_LOOP`, `HORN_LEFT`, `HORN_RIGHT`, `dot_port_grammar_summary.md`, `ref_papers/`).
 - Code: new generator / training code lives outside `archive/`. Never import from `archive/`.
+- `kolam_studio/src/kolam/` mirrors `kolam_press` (hypergraph, DSL, compiler). Python is the
+  source of truth: when the brush model changes, change both and check that both compile the
+  same programs to the same canonical text and traced strokes.
 - When adding generator code: structure-first per hypergraph doc §5
   (grid → relations → compose → validate → compile → render). Put `CROSSING_LOOP` /
   `HORN` / `PARALLEL_LOOP` compilers where both TS engine and Python exporter can

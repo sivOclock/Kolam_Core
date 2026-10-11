@@ -1,0 +1,200 @@
+/* Chalkboard design, carried over from archive/kolam_engine (main.css, theme.ts). */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-app:   #274C43;
+  --bg-panel: #17332D;
+  --bg-card:  #0B1F1B;
+  --text:     #E5E7EB;
+  --muted:    #9CA3AF;
+  --chalk:    #F9FAFB;
+  --yellow:   #FACC15;
+  --pink:     #FB7185;
+  --cyan:     #22D3EE;
+  --green:    #6EE7B7;
+  --red:      #F87171;
+}
+
+body {
+  background: var(--bg-card);
+  color: var(--text);
+  font-family: monospace;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── tab strip ─────────────────────────────────────────────────────────── */
+.chalk-nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 36px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 16px;
+  gap: 4px;
+  z-index: 100;
+}
+.chalk-nav a {
+  font-family: 'Schoolbell', cursive;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  padding: 4px 18px 6px;
+  border-radius: 6px 6px 0 0;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-bottom: none;
+  color: var(--chalk);
+  background: var(--bg-panel);
+}
+
+/* ── layout: draw board → formula → kolam board ───────────────────────── */
+.layout {
+  display: flex;
+  align-items: stretch;
+  height: 100vh;
+  gap: 16px;
+  padding: 52px 20px 22px;
+}
+
+.board {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: block;
+  touch-action: none;
+  background-color: var(--bg-app);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.03 0.05' numOctaves='6' seed='5' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeBlend in='SourceGraphic' mode='screen'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23c)' opacity='0.03'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 55% 45%, #2e6b52 0%, #274C43 45%, #1a3530 100%);
+  background-size: cover;
+  box-shadow:
+    0 0 0 3px #5a3a1a,
+    0 0 0 9px #7a4e28,
+    0 0 0 11px #3d2510,
+    0 6px 24px rgba(0,0,0,0.6);
+}
+#draw { cursor: crosshair; }
+
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+}
+
+/* ── formula panel ─────────────────────────────────────────────────────── */
+.panel {
+  width: 290px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.panel-top { display: flex; align-items: center; gap: 6px; }
+.label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.panel-top .label { margin-right: auto; }
+.title {
+  font-family: 'Schoolbell', cursive;
+  font-size: 1.25rem;
+  color: var(--chalk);
+  letter-spacing: 0.06em;
+  margin-right: auto;
+}
+
+button, .grid-input input {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--muted);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+button { cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+button:hover { color: var(--yellow); border-color: var(--yellow); }
+button.done { color: var(--green); border-color: var(--green); }
+button:disabled { opacity: 0.4; cursor: default; color: var(--muted); border-color: rgba(255,255,255,0.2); }
+
+.grid-input { display: flex; gap: 10px; align-items: center; }
+.grid-input label { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--muted); }
+.grid-input input { width: 48px; color: var(--chalk); font-size: 0.85rem; padding: 3px 6px; }
+.grid-input input:focus { outline: none; border-color: var(--yellow); color: var(--yellow); }
+
+.brushes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.brush {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 2px 4px;
+  color: var(--muted);
+}
+.brush b { font-size: 0.95rem; font-weight: normal; color: var(--chalk); }
+.brush span { font-size: 0.6rem; }
+.brush i { display: block; width: 18px; height: 3px; border-radius: 2px; }
+.brush.active { border-color: var(--yellow); background: rgba(250,204,21,0.08); }
+.brush.active b { color: var(--yellow); }
+
+#program {
+  flex: 1 1 40%;
+  min-height: 120px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--chalk);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  font-family: monospace;
+  resize: none;
+  white-space: pre;
+  overflow: auto;
+}
+#program:focus { outline: none; border-color: var(--yellow); }
+#program.invalid { border-color: var(--red); }
+
+.relations {
+  flex: 1 1 30%;
+  min-height: 60px;
+  overflow: auto;
+  list-style: none;
+  font-size: 0.75rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 6px;
+}
+.relations li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text);
+}
+.relations li:hover { background: rgba(255,255,255,0.05); }
+.relations li.selected { background: rgba(250,204,21,0.12); color: var(--yellow); }
+.relations li.bad { color: var(--red); }
+.relations li i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transform: translateY(1px); }
+.relations li small { color: var(--muted); margin-left: auto; }
+
+.status { font-size: 0.75rem; line-height: 1.5; color: var(--green); min-height: 1.2em; }
+.status.error { color: var(--red); }
+.hint { font-size: 0.7rem; line-height: 1.6; color: var(--muted); }
+.hint kbd { color: var(--yellow); font-family: monospace; }
+
+/* ── narrow screens: stack the boards ──────────────────────────────────── */
+@media (max-width: 900px) {
+  body { overflow: auto; height: auto; }
+  .layout { flex-direction: column; height: auto; padding: 48px 12px 20px; }
+  .board { flex: none; height: 78vw; max-height: 520px; }
+  .panel { width: 100%; }
+  #program { min-height: 190px; }
+  .flow-arrow { width: auto; height: 24px; transform: rotate(90deg); }
+}

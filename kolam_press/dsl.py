@@ -56,8 +56,9 @@ def _expand(waypoints: list[tuple[int, int]], where: str) -> list[tuple[int, int
     return out
 
 
-def parse(text: str) -> Hypergraph:
-    """Parse a brush program into a canonical, validated hypergraph."""
+def parse(text: str, strict: bool = True) -> Hypergraph:
+    """Parse a brush program into a canonical, validated hypergraph (strict: a dataset label;
+    otherwise any free drawing, see hypergraph.problems)."""
     names = brushes()["dsl"]
     grid = None
     rels: list[Relation] = []
@@ -103,7 +104,7 @@ def parse(text: str) -> Hypergraph:
     if grid is None:
         vs = [v for r in rels for v in r.vertices]
         grid = (max(v[0] for v in vs) + 1, max(v[1] for v in vs) + 1)
-    return Hypergraph(grid[0], grid[1], tuple(rels)).canonical().check()
+    return Hypergraph(grid[0], grid[1], tuple(rels)).canonical().check(strict)
 
 
 def _waypoints(vs: list[tuple[int, int]], closed: bool) -> list[tuple[int, int]]:

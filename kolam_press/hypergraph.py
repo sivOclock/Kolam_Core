@@ -10,8 +10,9 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
-from .spec import (CROSSING_LOOP, HORN, HORN_VARIANTS, LEFT_HORN, LOOP_TYPES, PARALLEL_LOOP,
-                   RELATION_TYPES, RIGHT_HORN, Vertex, adjacent, gate_between, horn_tip_points)
+from .spec import (CROSSING_LOOP, HORN, HORN_VARIANTS, JOIN, LEFT_HORN, LOOP_TYPES, PARALLEL_LOOP,
+                   RELATION_TYPES, RIGHT_HORN, Vertex, adjacent, gate_between, horn_tip_points,
+                   loop_gate_state)
 
 TYPE_ORDER = {CROSSING_LOOP: 0, PARALLEL_LOOP: 1, HORN: 2}
 
@@ -96,22 +97,104 @@ class Hypergraph:
         g = d["grid"]
         return Hypergraph(g["rows"], g["cols"], tuple(Relation.from_json(r) for r in d["relations"]))
 
-    def validate(self) -> list[str]:
-        return validate(self)
+    def validate(self, strict: bool = True) -> list[str]:
+        return validate(self, strict)
 
-    def check(self) -> "Hypergraph":
-        errs = validate(self)
+    def check(self, strict: bool = True) -> "Hypergraph":
+        errs = validate(self, strict)
         if errs:
             raise KolamError("; ".join(errs))
         return self
 
 
-def validate(h: Hypergraph) -> list[str]:
-    """Structural rules that make the hypergraph compile to a proper kolam with a unique label."""
-    errs: list[str] = []
+def problems(h: Hypergraph) -> list[tuple[str, str]]:
+    """Everything wrong with a hypergraph, as (level, message):
+
+    error  it cannot be drawn: off the grid, dots that are not 4-neighbours, one gap given two
+           different states, a broken horn
+    label  it draws, but the picture would not decode to exactly this label (dataset rules):
+           loops of one brush sharing a dot, two relations setting the same gap
+    """
+    out: list[tuple[str, str]] = []
     if not (1 <= h.rows <= 32 and 1 <= h.cols <= 32):
-        errs.append(f"grid {h.rows}x{h.cols} out of range 1..32")
-        return errs
+        return [("error", f"grid {h.rows}x{h.cols} out of range 1..32")]
+
+    def inside(v):
+        return 0 <= v[0] < h.rows and 0 <= v[1] < h.cols
+
+    gate_state: dict = {}      # gap -> (state, first relation)
+    loop_members = {CROSSING_LOOP: {}, PARALLEL_LOOP: {}}
+    horn_targets, tips = {}, {}
+    for i, r in enumerate(h.relations):
+        name = f"relation {i} ({r.type})"
+
+        def err(m, level="error"):
+            out.append((level, f"{name}: {m}"))
+        if r.type not in RELATION_TYPES:
+            err("unknown type")
+            continue
+        bad = [v for v in r.vertices if not inside(v)]
+        if bad:
+            err(f"vertices {bad} outside the {h.rows}x{h.cols} grid")
+            continue
+        if len(set(r.vertices)) != len(r.vertices):
+            err("repeated vertex")
+            continue
+        if r.type == HORN:
+            if r.variant not in HORN_VARIANTS or len(r.vertices) != 2 or r.closed:
+                err(f"a horn needs exactly 2 vertices and a variant in {HORN_VARIANTS}")
+                continue
+        else:
+            if r.variant is not None:
+                err("loops have no variant")
+            if len(r.vertices) < 2:
+                err("a loop needs at least 2 vertices")
+                continue
+            if r.closed and (len(r.vertices) < 4 or not adjacent(r.vertices[-1], r.vertices[0])):
+                err("a closed ring needs >= 4 dots with the last next to the first")
+                continue
+        state = JOIN if r.type == HORN else loop_gate_state(r.type)
+        for a, b in r.edges():
+            if not adjacent(a, b):
+                err(f"{list(a)} and {list(b)} are not neighbours (diagonal gaps have no gate)")
+                break
+            g = gate_between(a, b)
+            if g in gate_state and gate_state[g][0] != state:
+                err(f"the gap between {list(a)} and {list(b)} is already a {gate_state[g][0]} of relation "
+                    f"{gate_state[g][1]}; one gap can't be both")
+            elif g in gate_state:
+                err(f"the gap between {list(a)} and {list(b)} is also used by relation {gate_state[g][1]}",
+                    "label")
+            gate_state.setdefault(g, (state, i))
+        if r.type in LOOP_TYPES:
+            for v in r.vertices:
+                if v in loop_members[r.type]:
+                    err(f"dot {list(v)} already in {r.type} relation {loop_members[r.type][v]}"
+                        " (same-brush loops sharing a dot)", "label")
+                loop_members[r.type][v] = i
+        else:
+            a, b = r.vertices
+            if b in horn_targets:
+                err(f"dot {list(b)} is already the tip of horn {horn_targets[b]}")
+            horn_targets[b] = i
+            p = horn_tip_points(a, b, r.variant)[0]
+            # tips need room: a plain tip (in a gap) next to a curled tip (in the centre beside
+            # that gap) leaves their strands < 0.2 apart
+            for q, j in tips.items():
+                if (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= 1:
+                    err(f"tip too close to the tip of horn {j}")
+            tips[p] = i
+    for b, i in horn_targets.items():
+        users = [j for j, r in enumerate(h.relations) if j != i and b in r.vertices]
+        if users:
+            out.append(("error", f"relation {i} (HORN): tip dot {list(b)} must not be used by relations {users}"))
+    return out
+
+
+def validate(h: Hypergraph, strict: bool = True) -> list[str]:
+    """Problems as messages. strict: every dataset rule (the picture decodes to exactly this label);
+    otherwise only what makes it impossible to draw (a free drawing)."""
+    return [m for level, m in problems(h) if strict or level == "error"]
 
     def inside(v):
         return 0 <= v[0] < h.rows and 0 <= v[1] < h.cols
