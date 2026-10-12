@@ -576,13 +576,88 @@ Reference sheets: `refs/horns_final.png` (L/S/R in six contexts) and `refs/photo
 its gates read off the pixels plus 8 crescents, now `examples/sikku_diamond.kolam`).
 
 The photo kolam is a valid dataset label: its crossing lines branch at most dots, and rule 4 reads
-them off the gaps. The experimental generators in `kolam_press/systems.py` make kolams of this kind.
+them off the gaps. The experimental generators in `kolam_press/systems.py` make kolams of this kind (§11).
 
 ### 10.7 Open
 
 1. **Old datasets**: images rendered before §10 use old looks, labels with two-dot horns are no
    longer valid, and `data/kolams_v2` (and `docs/results/`) still has short horns (rule 7, 54% of
    its horns); regenerate them.
-2. **Generator systems**: `kolam_press/systems.py` tries three more ways to make kolams (2D L-system
-   substitution, gate switching toward one stroke, wave function collapse on tiles from the photo);
-   `python -m kolam_press systems -n 100` writes 100 of each beside the main generator's.
+2. **Generator systems**: four ways to make kolams (§11); not yet mixed into `generate`.
+
+## 11. Generator systems (`kolam_press/generator.py`, `kolam_press/systems.py`)
+
+Picture: `refs/systems_explained.png` (one row per system, step by step).
+
+All four systems choose **gap digits** (§10.1): every gap between two neighbouring dots is
+`0` wall, `1` cross or `2` tube. Once every gap is set, the kolam is fully decided; the label is read
+off the gaps (§8.4 rule 4). Crescent horns (§10.6) are added last, in whole symmetric orbits, and
+only if every label rule still holds. Each sample is then checked like any other: strict
+`validate`, program re-parse, decode from the drawing, `check_geometry`, no duplicates.
+
+```bash
+python -m kolam_press generate -n 3000 -o data/kolams_v3      # 1. random
+python -m kolam_press systems  -n 100  -o data/systems        # all four, 100 each, sheet.png per system
+```
+
+### 11.1 Random: the painter (`generator.py`)
+
+- Pick a grid (3–8 dots a side) and a symmetry (none, mirror, 180° turn, D2, C4, D4).
+- Lay brush strokes one at a time (a crossing line, a tube line or a horn), each copied at once to
+  its symmetric places; a stroke that breaks a rule is thrown out.
+- About 40% of kolams grow their brush lines as a tree, which gives one-stroke kolams.
+- Stop at 70–100% of the dots covered, then cover leftover dots by extending lines or adding horns.
+- Like a person drawing freehand, motif by motif: the most mixed kolams (tubes, crossings and
+  horns together) and the most open space.
+
+### 11.2 Substitution: the fractal grower (2D L-system)
+
+- Start from a small seed: 2×2 to 4×4 dots with D4-symmetric gaps.
+- Invent a rule book for this sample:
+  - **block rule**: a dot with N open gaps (N = 0–4) becomes a given k×k block of dots
+    (k = 2 or 3; for k = 3 the 4 gaps round the centre and the 8 round the edge are set apart);
+  - **seam rule**: where two parent dots had a wall, cross or tube between them, the gaps between
+    their blocks follow a given palindromic pattern, so symmetry is kept.
+- Apply the rule book again and again (2×2 → 4×4 → 8×8) while the grid is at most 12 dots a side.
+- The same rule works at every scale, so patterns sit inside patterns. Each sample invents a new rule
+  book, so no two look alike. Ornate and surprising; rarely one stroke.
+- After Siromoney's kolam array grammars and Prusinkiewicz's L-system kolams.
+
+### 11.3 Switching: the one-line maker
+
+- Pick a dot layout (square, diamond, octagon or plus; 5–11 dots a side) and a symmetry (D4, D2, C4).
+- Start with **every gap a cross**: the full sikku net, which is usually several closed lines.
+- Pick a symmetric set of gaps where two different lines meet and flip it (to a wall, or sometimes
+  to a tube). Keep the flip only if the number of lines went down and no dot was left bare.
+- Repeat until one line (75% of samples aim for that, the rest for 2–4 lines) or 150 failed flips.
+- Real sikku kolams work this way: one unbroken line round every dot is the classic ideal.
+- After Sivakumar & Sivakumar 2026 (gate switching) and Gerdes' mirror curves.
+- Weak spot: under D4 one flip changes 4–8 gaps at once, which can split lines as well as join them,
+  so it often gets stuck.
+
+### 11.4 WFC: the student (wave function collapse)
+
+- Cut a real kolam (`examples/sikku_diamond.kolam`, the photographed one) into **dot pieces**:
+  a dot plus what its 4 gaps do. With the 8 turns and mirrors there are 15 kinds, each counted.
+- Pick a dot layout and symmetry as in switching, then fill the grid like a jigsaw:
+  the dot with the **fewest pieces that still fit** its neighbours goes first, gets a piece drawn by
+  how often it appears in the photo, and is copied to its symmetric places.
+- If no piece fits somewhere, start again (up to 80 tries).
+- Every local piece comes from a real kolam, so the style carries over into a new design.
+- Weak spot: it only knows its source. The photo has no tubes, so WFC never makes tubes; each new
+  source kolam adds new pieces.
+
+### 11.5 First run (100 each, seed 0)
+
+All 400 pass every check above.
+
+| system | how it creates | best at | one stroke | weak spot |
+|---|---|---|---|---|
+| random | places brush strokes | variety, horns, open layouts | 37% | less traditional |
+| substitution | repeats a rule at every scale | ornate, nested, surprising | 1% | rarely one line |
+| switching | merges lines | real sikku, one-line kolams | 27% | stuck under D4 |
+| wfc | copies local pieces of a real kolam | looking human | 4% | only its source's pieces (no tubes) |
+
+Substitution averages 10.7 horns a kolam and 83 of 100 have tubes; switching 16 of 100; WFC none.
+`evaluate`'s exact isomorphism check is too slow on large symmetric kolams; fix it before evaluating
+these sets.

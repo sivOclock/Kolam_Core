@@ -67,6 +67,23 @@ Each line of `labels.jsonl` holds:
 
 ![36 generated training images](docs/results/gallery.jpg)
 
+### Four generator systems
+
+`generate` is the first of four ways to make kolams. All four only choose what each gap between two
+dots does (wall, cross or tube), then add crescent horns, and every sample passes the same checks.
+
+![the four systems, step by step](refs/systems_explained.png)
+
+- **Random** (the painter): lays brush strokes one at a time with their symmetric copies.
+- **Substitution** (the fractal grower, a 2D L-system): every dot becomes a block of dots by a rule
+  book made up for each kolam, generation after generation, so patterns sit inside patterns.
+- **Switching** (the one-line maker): starts with every gap a crossing and flips gaps only when two
+  lines merge into one, the way real sikku kolams are drawn as one unbroken line.
+- **WFC** (the student): cuts a real kolam into dot pieces and fills a new grid with them like a jigsaw.
+
+`python -m kolam_press systems -n 100 -o data/systems` writes 100 of each with a contact sheet.
+Details and first results: spec §11.
+
 ## Is the data good? (3000-sample run, `docs/results/report.md`)
 
 This run predates the crescent-only horn rule (spec §8.4 rule 7): about half its horns are short
@@ -113,7 +130,7 @@ rounded-versus-pointed differences that a real CNN should resolve. Full report:
 ## Layout
 
 ```text
-kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · evaluate
+kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · systems · evaluate
 examples/      brush programs (showcase, flower, one_stroke, sikku_diamond = a photographed kolam)
 tests/         pytest: notebook crossing-loop equivalence, mirror ↔ left/right on pixels, DSL, decode, determinism
 docs/          hypergraph_kolams.md (spec, §8 = brushes) · references.md · results/

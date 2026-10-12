@@ -45,7 +45,7 @@ Rules:
 Kolam_labs/
 ├── AGENTS.md
 ├── README.md / todo.md
-├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns)
+├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns, §11 generator systems)
 ├── docs/references.md
 ├── docs/results/                  # gallery + evaluation report of the current generator
 ├── kolam_press/                   # data generator (Python package)
@@ -54,7 +54,8 @@ Kolam_labs/
 │   ├── dsl.py                     # brush DSL: c(...), p(...), h/hl/hr([r,c],N)
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
 │   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
-│   └── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
+│   ├── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
+│   └── systems.py                 # substitution (2D L-system), switching, WFC generators (spec §11)
 ├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam
 │   └── src/kolam/                 # TS port of model + compiler + drawn(); reads kolam_press/brushes.json
 ├── examples/*.kolam               # brush programs (sikku_diamond = a photographed kolam, free drawing)
