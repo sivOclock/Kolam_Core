@@ -430,6 +430,9 @@ image. The program `c([0,0],[0,2]); hl([2,1],S)` on a 3×3 grid is:
 A closed ring adds `"closed": true`. Relations are sorted (crossing loops, parallel
 loops, horns), so equal kolams give byte-equal labels.
 
+Each record also stores `sparse`, the same label as a gap code (§12): for the example above
+`[[1,2,1],[1,4,1],[6,3,4]]` (the horn sits on the bottom border gap). It is the training target; the hypergraph is rebuilt from it exactly.
+
 ### 9.3 What `hypergraph.py` provides
 
 | function | job | used by |
@@ -661,3 +664,124 @@ All 400 pass every check above.
 Substitution averages 10.7 horns a kolam and 83 of 100 have tubes; switching 16 of 100; WFC none.
 `evaluate`'s exact isomorphism check is too slow on large symmetric kolams; fix it before evaluating
 these sets.
+
+## 12. Gap codes: the training form of the label (`kolam_press/gapcode.py`)
+
+Pictures: `refs/grid_representation.png` (the digits), `refs/representation_examples.png`
+(one kolam in every form), `refs/sparse_positions.png` (addresses), `refs/grid_why.png` (why, how
+lines are read back, tokenizers).
+
+The hypergraph stays the label (§3). For training it is written as a **gap code**, an exact
+equivalent: one digit on every gap of the dot grid, border gaps included. Lines and tubes are
+already gap states (§10.1); a horn always points through a wall gap, so it is written on that gap.
+
+### 12.1 The 9 digits
+
+| digit | gap |
+|---|---|
+| `0` | wall: nothing passes (also all empty space) |
+| `1` | cross |
+| `2` | tube |
+| `3` `4` `5` | plain / left / right horn facing E or S (right or down) |
+| `6` `7` `8` | plain / left / right horn facing W or N (left or up) |
+
+A horn has 3 curls × 4 directions, but the gap fixes the axis: a left/right gap can only hold an E or
+W horn, an up/down gap only an S or N horn. So the digit only says the curl and forward (E, S) or back
+(W, N): `5` on a left/right gap is `hr` facing E, on an up/down gap `hr` facing S. Every gap holds at
+most one thing: a horn needs a wall gap, and its target spot is empty, so no horn comes from the other
+side; horns meeting in one spot (§10.6) come in through different gaps.
+
+### 12.2 Three forms
+
+Addresses are lattice points (§8.1): dots at (odd, odd), left/right gaps at (odd row, even col),
+up/down gaps at (even row, odd col), empty middles at (even, even).
+
+- **grid**: the `(2·rows+1) × (2·cols+1)` lattice with a digit on each of its
+  `2·rows·cols + rows + cols` gaps (5×5 dots: 60; 12×12: 312). Rows alternate `cols` and `cols+1`
+  gaps, so `rows × cols` alone says where each row ends.
+- **sparse** (stored in `labels.jsonl`): the non-zero gaps only, in reading order, as
+  `(lattice row, lattice col, digit)`. Walls and empty space are not written; position is not lost
+  because each item carries its own address. The grid size is read back from the dots the items
+  touch (a `1`/`2` touches the dots on both sides, a horn only its own dot: `3`–`5` the up/left one,
+  `6`–`8` the down/right one), since dataset kolams are cropped to their dots.
+- **tokens**: sparse written for a sequence model: `<rK>` once per lattice row, then `<cJ> <D>`
+  pairs, then `<end>`. 59 tokens: `<r0>`–`<r24>`, `<c0>`–`<c24>`, `<1>`–`<8>`, `<end>`.
+
+The program `grid(5,5); c([0,2],[4,2]); c([1,1],[1,3]); c([2,0],[2,4]); c([3,1],[3,3]);
+hl([0,2],W); hl([4,2],E); hr([0,2],E); hr([4,2],W)` (one drawn line, 8 relations) is:
+
+```text
+sparse  (1,4,7) (1,6,5) (2,5,1) (3,4,1) (3,6,1) (4,5,1) (5,2,1) (5,4,1)
+        (5,6,1) (5,8,1) (6,5,1) (7,4,1) (7,6,1) (8,5,1) (9,4,8) (9,6,4)
+tokens  <r1> <c4> <7> <c6> <5>  <r2> <c5> <1>  <r3> <c4> <1> <c6> <1>  <r4> <c5> <1>
+        <r5> <c2> <1> <c4> <1> <c6> <1> <c8> <1>  <r6> <c5> <1>  <r7> <c4> <1> <c6> <1>
+        <r8> <c5> <1>  <r9> <c4> <8> <c6> <4>  <end>                        (42 tokens)
+```
+
+`(5,2,1)`: row 5 is odd, so dot row 2; col 2 is even, so between dot columns 0 and 1; a cross between
+dots [2,0] and [2,1].
+
+### 12.3 Reading it back
+
+1. Missing gaps are `0`. Size from the touched dots (or given).
+2. Lines from the `1`s and the `2`s, separately, with the `from_gates` rule (§8.4 rule 4): at a dot
+   with 2 open gaps the line goes on (round corners too); with 3 or 4 it goes straight through and a
+   side branch is a line of its own; it ends at a dot with 1; a ring of 2-gap dots is a closed loop.
+3. Each `3`–`8` is a horn on the dot beside its gap, facing out through it.
+4. That is the canonical hypergraph; program, JSON and picture follow.
+
+`to_grid`/`from_grid`, `to_sparse`/`from_sparse`, `to_tokens`/`from_tokens` are exact inverses
+(`tests/test_gapcode.py`; all 400 samples of the first systems run round-trip, sizes included).
+
+### 12.4 Generating with a sequence model
+
+```text
+image → vision encoder → decoder → <r1> <c4> <7> … <end> → sparse → grid → from_gates → hypergraph
+```
+
+The decoder writes one token at a time, scanning the kolam top to bottom, left to right. Decoding is
+**constrained** (`allowed_next`): after the start a row or `<end>`; after `<rK>` a column on a gap
+of that row (odd row: even column; even row: odd column); after `<cJ>` a digit; after a digit a
+larger column, a larger row, or `<end>`. Every output therefore parses into a grid; the label rules
+(§8.4) are then checked by `validate`. Training is plain next-token prediction on the token
+sequence. The sequence is built from `sparse` at training time, so the token layout can change
+without regenerating data.
+
+A model that predicts every gap at once (one 9-way choice per slot on a 12×12-dot canvas, plus rows
+and cols) uses the grid instead; there zeros cost nothing, and no tokenizer is involved.
+
+### 12.5 Why this form
+
+Length on the first systems run (100 each), tokens per kolam, average / max:
+
+| system | program, own tokens | full grid + row ends | sparse, 3 tokens/item | **row-grouped (§12.2)** | 1 token/item |
+|---|---|---|---|---|---|
+| random | 39 / 123 | 83 / 161 | 91 / 304 | **70 / 220** | 31 / 102 |
+| switching | 67 / 160 | 177 / 287 | 290 / 709 | **210 / 496** | 97 / 237 |
+| wfc | 75 / 186 | 168 / 287 | 166 / 457 | **125 / 328** | 56 / 153 |
+| substitution | 140 / 426 | 176 / 337 | 332 / 865 | **238 / 602** | 111 / 289 |
+
+The program is often shorter in tokens, but it is harder to learn:
+
+| | program | gap code |
+|---|---|---|
+| a position | counted across the image (`[7,3]`) | one gap: look at one spot |
+| order | which line first, where it starts | reading order, fixed |
+| branching | the model must split lines | `from_gates` does it |
+| one mistake | can shift or end a line and all after it | one wrong gap |
+
+Row-grouped tokens rather than 1 token per item (`<gap117=1>`, 2,496 tokens): 59 tokens instead of
+2,496, and `<c4>` means column 4 in every row, so what is learned at one spot carries to the others.
+The 1-token form is the fallback if length becomes the bottleneck; it is built from the same `sparse`.
+
+**Tokenizers.** A text tokenizer must not see the code as plain digits. GPT-4's `cl100k` cuts the
+rows `00000|007500|00100|…` into `000` `00` `|` `007` `500` `|` `001` `00` …: `007` is wall, wall,
+left horn in one token, so one gap gets different tokens depending on its neighbours. Spacing the
+digits doubles the length (`0`, ` ` per digit). Use our own vocabulary (a model of our own) or add
+the 59 tokens as special tokens (a pretrained vision-language model, as PaliGemma does with its
+location tokens).
+
+**Not chosen**: per-dot tiles (each gap stored twice, the copies can disagree); the lattice stroke
+sequence (longest, stroke order arbitrary); folding by symmetry (2–8× smaller but fails on kolams
+without symmetry and makes the model guess the group first).
+

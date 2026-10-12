@@ -112,3 +112,22 @@ Papers referenced in the Kolam Labs project. PDFs, where kept, are local only (n
 
 **Relevance:** Constructive rules for a family of one-stroke kolams on growing dot grids; a candidate for another rule-based system.
 
+---
+
+## [11] Pix2Seq: a language modeling framework for object detection
+
+**Authors:** Ting Chen, Saurabh Saxena, Lala Li, David J. Fleet, Geoffrey Hinton  
+**Published:** ICLR 2022  
+**Link:** https://arxiv.org/abs/2109.10852
+
+**Relevance:** Objects written as sequences of discrete coordinate tokens and read off an image by a decoder. The gap-code token layout (spec §12.4) does the same with gap addresses and digits.
+
+---
+
+## [12] PaliGemma
+
+**Authors:** Lucas Beyer et al., Google DeepMind  
+**Link:** https://arxiv.org/abs/2407.07726
+
+**Relevance:** A pretrained vision-language model that adds special location tokens to its vocabulary for detection. The same route fits the 59 gap-code tokens when fine-tuning a ready-made model (spec §12.5).
+

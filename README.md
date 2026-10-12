@@ -62,6 +62,7 @@ Each line of `labels.jsonl` holds:
 - the image path;
 - `program`, the canonical brush program;
 - `hypergraph`, the label in the spec JSON format;
+- `sparse`, the same label as a gap code (the training target);
 - `lattice_sequence`, the compiled strokes;
 - stats and the render style.
 
@@ -83,6 +84,18 @@ dots does (wall, cross or tube), then add crescent horns, and every sample passe
 
 `python -m kolam_press systems -n 100 -o data/systems` writes 100 of each with a contact sheet.
 Details and first results: spec §11.
+
+### The training target: gap codes
+
+Every kolam is one digit on each gap between two dots: `0` wall, `1` cross, `2` tube, `3`–`8` a horn
+(plain / left / right, facing right-or-down or left-or-up). The label stored for training (`sparse`)
+lists only the non-zero gaps, each with its own address, `(lattice row, lattice col, digit)`; a
+sequence model writes it as `<r5> <c2> <1> <c4> <1> … <end>` with 59 tokens of its own, under
+constrained decoding so every output parses. It converts to and from the hypergraph exactly.
+
+![a kolam as gap digits](refs/grid_representation.png)
+
+Why this form, how lines are read back, and tokenizer pitfalls: spec §12 and `refs/grid_why.png`.
 
 ## Is the data good? (3000-sample run, `docs/results/report.md`)
 
@@ -130,7 +143,7 @@ rounded-versus-pointed differences that a real CNN should resolve. Full report:
 ## Layout
 
 ```text
-kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · systems · evaluate
+kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · systems · gapcode · evaluate
 examples/      brush programs (showcase, flower, one_stroke, sikku_diamond = a photographed kolam)
 tests/         pytest: notebook crossing-loop equivalence, mirror ↔ left/right on pixels, DSL, decode, determinism
 docs/          hypergraph_kolams.md (spec, §8 = brushes) · references.md · results/
@@ -139,6 +152,6 @@ archive/       old TypeScript engine/UI — archived, not used
 
 ## Next
 
-- Train the image → hypergraph model on this data. A good first target is the brush
-  program text (`labels.jsonl:program`).
+- Train the image → hypergraph model on this data, with the gap code (`labels.jsonl:sparse`,
+  spec §12) as the target.
 - Run a VLM baseline against the same evaluator.
