@@ -22,9 +22,9 @@ Anchor grid → ordered hypergraph → relation compiler → lattice sequence �
 The ML task is `image → ordered typed hypergraph`. Every synthetic image must have
 an exact hypergraph label. The lattice sequence is a compiled intermediate, not
 the primary label.
-The training target is the label's gap code (`sparse` in `labels.jsonl`, spec §12): the non-zero
-gaps as `(lattice row, lattice col, digit)`, digits 1 cross, 2 tube, 3–8 horns; it converts to and
-from the hypergraph exactly (`kolam_press/gapcode.py`).
+The training target is the label's gap code (`code` in `labels.jsonl`, spec §12): a plain grid of
+one digit per gap (0 wall, 1 cross, 2 tube, 3–8 horns), rows of `cols` and `cols+1` digits
+alternating; it converts to and from the hypergraph exactly (`kolam_press/gapcode.py`).
 
 ## The 3 forms (only these — see docs/hypergraph_kolams.md §2)
 
@@ -48,7 +48,7 @@ Rules:
 Kolam_labs/
 ├── AGENTS.md
 ├── README.md / todo.md
-├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns, §11 generator systems, §12 gap codes)
+├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns, §11 generator systems, §12 gap code)
 ├── docs/references.md
 ├── docs/results/                  # gallery + evaluation report of the current generator
 ├── kolam_press/                   # data generator (Python package)
@@ -58,7 +58,7 @@ Kolam_labs/
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
 │   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
 │   ├── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
-│   ├── gapcode.py                 # gap codes: label <-> grid / sparse / tokens, constrained decoding (spec §12)
+│   ├── gapcode.py                 # gap code: label <-> digit grid / cells / tokens, constrained decoding (spec §12)
 │   └── systems.py                 # substitution (2D L-system), switching, WFC generators (spec §11)
 ├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam
 │   └── src/kolam/                 # TS port of model + compiler + drawn(); reads kolam_press/brushes.json

@@ -1,6 +1,6 @@
-"""Gap codes: the training form of a label (docs/hypergraph_kolams.md §12).
+"""Gap code: the training form of a label (docs/hypergraph_kolams.md §12).
 
-A kolam is fully given by one digit on every gap of its dot grid, border gaps included:
+A kolam is one digit on every gap of its dot grid, border gaps included:
 
     0 wall   1 cross   2 tube
     3 4 5    plain / left / right horn, facing E or S (right or down)
@@ -10,11 +10,14 @@ A horn always points through a wall gap, so it is written on that gap; the gap's
 says E/W or S/N. The digits are read back into the canonical hypergraph with `from_gates`, so
 label <-> code is exact.
 
-    grid    (2*rows+1) x (2*cols+1) int8 lattice: gaps hold digits, dots and centres hold 0
-    sparse  the non-zero gaps only, in reading order: [(lattice row, lattice col, digit), ...].
-            Walls and empty space are not written. The grid size is read back from the dots the
-            items touch (dataset labels are cropped to their dots).
-    tokens  sparse for a sequence model: <rK> once per lattice row, then <cJ> <D> pairs, then <end>
+    code    the gap rows of the lattice, top to bottom, as digit strings: rows alternate
+            cols digits (up/down gaps) and cols+1 digits (left/right gaps, both borders), 2*rows+1
+            rows in all, e.g. ["00000", "007500", "00100", ...]. Stored in labels.jsonl.
+    grid    the same digits on the (2*rows+1) x (2*cols+1) lattice (dots and centres 0)
+    cells   the same digits one cell per dot: (rows+1) x (cols+1) x 2 = (left gap, top gap) of
+            dot (r, c); cells past the last dot row/col hold 0 in the missing slot. For a model
+            that predicts every gap at once.
+    tokens  the code for a sequence model: each row's digits, then "|", then "<end>" (11 tokens)
 """
 from __future__ import annotations
 
@@ -23,17 +26,8 @@ import numpy as np
 from .hypergraph import Hypergraph, KolamError, Relation, from_gates, loop_gates
 from .spec import CROSS, HORN, HORN_VARIANTS, JOIN, gate_between, horn_target
 
-MAX_DOTS = 12                  # largest grid side; lattice coordinates run 0 .. 2*MAX_DOTS
-L = 2 * MAX_DOTS
-VOCAB = ([f"<r{i}>" for i in range(L + 1)] + [f"<c{j}>" for j in range(L + 1)]
-         + [f"<{d}>" for d in range(1, 9)] + ["<end>"])
-
-
-def _dots(i: int, j: int):
-    """The two dots on either side of gap (i, j): (up or left, down or right)."""
-    if i % 2:
-        return ((i - 1) // 2, j // 2 - 1), ((i - 1) // 2, j // 2)
-    return (i // 2 - 1, (j - 1) // 2), (i // 2, (j - 1) // 2)
+VOCAB = [str(d) for d in range(9)] + ["|", "<end>"]
+FACING_OUT = {"N": "0678", "W": "0678", "S": "0345", "E": "0345"}   # digits a border gap may hold
 
 
 def to_grid(h: Hypergraph) -> np.ndarray:
@@ -61,85 +55,100 @@ def from_grid(g: np.ndarray) -> Hypergraph:
         if x <= 2:
             gates[(i, j)] = CROSS if x == 1 else JOIN
             continue
-        a, b = _dots(i, j)
+        if i % 2:   # left/right gap: dots to its left (a) and right (b)
+            a, b = ((i - 1) // 2, j // 2 - 1), ((i - 1) // 2, j // 2)
+        else:       # up/down gap: dots above (a) and below (b)
+            a, b = (i // 2 - 1, (j - 1) // 2), (i // 2, (j - 1) // 2)
         fwd = x <= 5
         d = ("E" if fwd else "W") if i % 2 else ("S" if fwd else "N")
         horns.append(Relation(HORN, (a if fwd else b,), HORN_VARIANTS[(x - 3) % 3], False, d))
     return from_gates(rows, cols, gates, horns)
 
 
-def to_sparse(h: Hypergraph) -> list[tuple[int, int, int]]:
+def to_code(h: Hypergraph) -> list[str]:
     g = to_grid(h)
-    return [(int(i), int(j), int(g[i, j])) for i, j in zip(*np.nonzero(g))]
+    return ["".join(str(int(x)) for x in g[i, (i + 1) % 2::2]) for i in range(g.shape[0])]
 
 
-def sparse_grid(items, rows: int | None = None, cols: int | None = None) -> np.ndarray:
-    """The full grid of a sparse list; rows/cols default to the extent of the dots it touches."""
-    if rows is None or cols is None:
-        dots = set()
-        for i, j, x in items:
-            a, b = _dots(i, j)
-            dots |= {a, b} if x <= 2 else {a if x <= 5 else b}
-        if not dots:
-            raise KolamError("empty code: no kolam")
-        rows = max(v[0] for v in dots) + 1 if rows is None else rows
-        cols = max(v[1] for v in dots) + 1 if cols is None else cols
+def code_grid(code: list[str]) -> np.ndarray:
+    if len(code) < 3 or len(code) % 2 == 0:
+        raise KolamError(f"a code has 2*rows+1 rows (3, 5, 7, ...), not {len(code)}")
+    rows, cols = (len(code) - 1) // 2, len(code[0])
     g = np.zeros((2 * rows + 1, 2 * cols + 1), np.int8)
-    for i, j, x in items:
-        if not (0 <= i <= 2 * rows and 0 <= j <= 2 * cols):
-            raise KolamError(f"item {(i, j, x)} is outside a {rows} x {cols} grid")
-        g[i, j] = x
+    for i, row in enumerate(code):
+        if len(row) != cols + i % 2:
+            raise KolamError(f"code row {i} has {len(row)} digits, wants {cols + i % 2}")
+        g[i, (i + 1) % 2::2] = [int(x) for x in row]
     return g
 
 
-def from_sparse(items, rows: int | None = None, cols: int | None = None) -> Hypergraph:
-    return from_grid(sparse_grid(items, rows, cols))
+def from_code(code: list[str]) -> Hypergraph:
+    return from_grid(code_grid(code))
 
 
-def to_tokens(items) -> list[str]:
-    out, row = [], None
-    for i, j, x in items:
-        if i != row:
-            out.append(f"<r{i}>")
-            row = i
-        out += [f"<c{j}>", f"<{x}>"]
-    return out + ["<end>"]
+def to_cells(h: Hypergraph) -> np.ndarray:
+    g = to_grid(h)
+    rows, cols = h.rows, h.cols
+    c = np.zeros((rows + 1, cols + 1, 2), np.int8)
+    c[:rows, :, 0] = g[1::2, 0::2]     # left gap of dot (r, c); column cols = the right border
+    c[:, :cols, 1] = g[0::2, 1::2]     # top gap of dot (r, c); row rows = the bottom border
+    return c
 
 
-def from_tokens(tokens) -> list[tuple[int, int, int]]:
-    items, row, col = [], None, None
+def from_cells(c: np.ndarray) -> Hypergraph:
+    rows, cols = c.shape[0] - 1, c.shape[1] - 1
+    g = np.zeros((2 * rows + 1, 2 * cols + 1), np.int8)
+    g[1::2, 0::2] = c[:rows, :, 0]
+    g[0::2, 1::2] = c[:, :cols, 1]
+    return from_grid(g)
+
+
+def to_tokens(code: list[str]) -> list[str]:
+    return [t for row in code for t in [*row, "|"]] + ["<end>"]
+
+
+def from_tokens(tokens) -> list[str]:
+    code, row = [], ""
     for t in tokens:
         if t == "<end>":
             break
-        if t.startswith("<r"):
-            row = int(t[2:-1])
-        elif t.startswith("<c"):
-            col = int(t[2:-1])
+        if t == "|":
+            code.append(row)
+            row = ""
         else:
-            items.append((row, col, int(t[1:-1])))
-    return items
+            row += t
+    return code
 
 
 def allowed_next(prefix) -> list[str]:
-    """Constrained decoding: the tokens that keep a partial sequence well formed. Rows go down,
-    columns go right within a row, a column sits on a gap of its row (odd row: even col, even row:
-    odd col), every column is followed by one digit. Any sequence built this way parses."""
-    row = col = None
-    last = None
+    """Constrained decoding: the tokens that keep a partial code well formed. The first row sets
+    cols; rows then alternate cols+1 and cols digits; <end> only after a full cols-digit row (never
+    the first). Border gaps only hold walls or horns facing out of the grid."""
+    rows_done, row = [], []
     for t in prefix:
         if t == "<end>":
             return []
-        if t.startswith("<r"):
-            row, col = int(t[2:-1]), None
-        elif t.startswith("<c"):
-            col = int(t[2:-1])
-        last = t[1]
-    rows_after = [f"<r{i}>" for i in range(L + 1) if row is None or i > row]
-    if last is None:
-        return rows_after + ["<end>"]
-    if last == "c":
-        return [f"<{d}>" for d in range(1, 9)]
-    cols_after = [f"<c{j}>" for j in range(L + 1) if (row + j) % 2 and (col is None or j > col)]
-    if last == "r":
-        return cols_after
-    return cols_after + rows_after + ["<end>"]
+        if t == "|":
+            rows_done.append(row)
+            row = []
+        else:
+            row.append(t)
+    i = len(rows_done)
+    digits = [str(d) for d in range(9)]
+    if i == 0:                                    # top border: walls or horns facing N
+        return [d for d in digits if d in FACING_OUT["N"]] + (["|"] if row else [])
+    cols = len(rows_done[0])
+    want = cols + i % 2
+    if not row and i >= 3 and i % 2 == 1:         # just closed a cols-digit row: may end here
+        end = ["<end>"]
+    else:
+        end = []
+    if len(row) == want:
+        return ["|"]
+    if i % 2 and len(row) == 0:                   # left border
+        ok = FACING_OUT["W"]
+    elif i % 2 and len(row) == want - 1:          # right border
+        ok = FACING_OUT["E"]
+    else:
+        ok = "".join(digits)
+    return [d for d in digits if d in ok] + end

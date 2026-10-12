@@ -62,7 +62,7 @@ Each line of `labels.jsonl` holds:
 - the image path;
 - `program`, the canonical brush program;
 - `hypergraph`, the label in the spec JSON format;
-- `sparse`, the same label as a gap code (the training target);
+- `code`, the same label as a gap code (the training target);
 - `lattice_sequence`, the compiled strokes;
 - stats and the render style.
 
@@ -85,13 +85,25 @@ dots does (wall, cross or tube), then add crescent horns, and every sample passe
 `python -m kolam_press systems -n 100 -o data/systems` writes 100 of each with a contact sheet.
 Details and first results: spec §11.
 
-### The training target: gap codes
+### The training target: the gap code
 
 Every kolam is one digit on each gap between two dots: `0` wall, `1` cross, `2` tube, `3`–`8` a horn
-(plain / left / right, facing right-or-down or left-or-up). The label stored for training (`sparse`)
-lists only the non-zero gaps, each with its own address, `(lattice row, lattice col, digit)`; a
-sequence model writes it as `<r5> <c2> <1> <c4> <1> … <end>` with 59 tokens of its own, under
-constrained decoding so every output parses. It converts to and from the hypergraph exactly.
+(plain / left / right, facing right-or-down or left-or-up). The label for training (`code`) is just
+those digits as a grid, row by row, nothing else:
+
+```text
+00000
+007500     ← two horns on the top dot
+00100
+001100
+00100
+011110     ← the long middle line
+...
+```
+
+A model that predicts every gap at once outputs exactly this, at any grid size; a sequence model
+writes it with 11 tokens (`0`–`8`, row end, end) under constrained decoding. It converts to and from
+the hypergraph exactly.
 
 ![a kolam as gap digits](refs/grid_representation.png)
 
@@ -152,6 +164,6 @@ archive/       old TypeScript engine/UI — archived, not used
 
 ## Next
 
-- Train the image → hypergraph model on this data, with the gap code (`labels.jsonl:sparse`,
+- Train the image → hypergraph model on this data, with the gap code (`labels.jsonl:code`,
   spec §12) as the target.
 - Run a VLM baseline against the same evaluator.

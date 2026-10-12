@@ -26,7 +26,7 @@ from PIL import Image
 from .compiler import Config, compile_hypergraph, trace
 from .dsl import format_program, parse
 from .generator import GROUPS, generate_dataset
-from .gapcode import to_sparse
+from .gapcode import to_code
 from .geometry import check_geometry
 from .hypergraph import Hypergraph, Relation, from_gates, gate_codes, loop_gates, problems, transform_relation
 from .render import random_style, render_kolam
@@ -314,7 +314,7 @@ def write_system(name: str, make, out: Path, n: int, seed: int, size: int = 384)
         style = random_style(rng, size)
         rec = {"id": f"{name}_{i:04d}", "image": f"images/{name}_{i:04d}.png", "system": name,
                "grid": {"rows": h.rows, "cols": h.cols}, "program": format_program(h), "gaps": gate_codes(h),
-               "sparse": [list(t) for t in to_sparse(h)],
+               "code": to_code(h),
                "hypergraph": h.to_json(), "lattice_sequence": [[list(p) for p in s + s[:1]] for s in c.strokes],
                "stats": {"relations": len(h.relations), "strokes": geo["n_strokes"], "crossings": geo["n_crossings"],
                          "coverage": round(len(h.used_vertices()) / (h.rows * h.cols), 3), **meta},

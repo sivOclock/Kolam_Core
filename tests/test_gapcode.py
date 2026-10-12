@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from kolam_press import KolamError, parse
-from kolam_press.gapcode import (allowed_next, from_grid, from_sparse, from_tokens, sparse_grid, to_grid, to_sparse,
-                                 to_tokens)
+from kolam_press.gapcode import (allowed_next, code_grid, from_cells, from_code, from_grid, from_tokens, to_cells,
+                                 to_code, to_grid, to_tokens)
 from kolam_press.generator import GenConfig, generate_sample
 from kolam_press.systems import substitution, switching
 
@@ -19,10 +19,10 @@ def same(a, b):
 
 def test_example_code():
     h = parse(SWITCHING_0010)
-    assert to_sparse(h) == [(1, 4, 7), (1, 6, 5), (2, 5, 1), (3, 4, 1), (3, 6, 1), (4, 5, 1), (5, 2, 1), (5, 4, 1),
-                            (5, 6, 1), (5, 8, 1), (6, 5, 1), (7, 4, 1), (7, 6, 1), (8, 5, 1), (9, 4, 8), (9, 6, 4)]
-    assert to_tokens(to_sparse(h))[:6] == ["<r1>", "<c4>", "<7>", "<c6>", "<5>", "<r2>"]
-    assert same(from_sparse(to_sparse(h)), h)
+    assert to_code(h) == ["00000", "007500", "00100", "001100", "00100", "011110",
+                          "00100", "001100", "00100", "008400", "00000"]
+    assert to_tokens(to_code(h))[:7] == ["0", "0", "0", "0", "0", "|", "0"]
+    assert same(from_code(to_code(h)), h)
 
 
 @pytest.mark.parametrize("variant,dir_,digit", [
@@ -36,7 +36,7 @@ def test_horn_digits(variant, dir_, digit):
     assert same(from_grid(g), h)
 
 
-def test_grids_of_generated_kolams_round_trip():
+def test_codes_of_generated_kolams_round_trip():
     hs = [parse(generate_sample(i, 3, GenConfig())[0]["program"]) for i in range(40)]
     for make, seed in ((substitution, 1), (switching, 2)):
         rng = np.random.default_rng(seed)
@@ -44,34 +44,37 @@ def test_grids_of_generated_kolams_round_trip():
     for h in hs:
         if not h.relations:
             continue
-        g = to_grid(h)
-        assert same(from_grid(g), h)
-        items = to_sparse(h)
-        assert all(x != 0 for *_, x in items)
-        assert same(from_sparse(items, h.rows, h.cols), h)
-        assert from_tokens(to_tokens(items)) == items
+        code = to_code(h)
+        assert len(code) == 2 * h.rows + 1 and [len(r) for r in code[:2]] == [h.cols, h.cols + 1]
+        assert same(from_code(code), h)
+        assert same(from_cells(to_cells(h)), h)
+        assert from_tokens(to_tokens(code)) == code
+        toks = to_tokens(code)
+        assert all(t in allowed_next(toks[:k]) for k, t in enumerate(toks))
 
 
-def test_sparse_reads_the_size_of_a_cropped_kolam():
-    rec = generate_sample(5, 0, GenConfig())[0]
-    items = [tuple(t) for t in rec["sparse"]]
-    assert sparse_grid(items).shape == (2 * rec["grid"]["rows"] + 1, 2 * rec["grid"]["cols"] + 1)
+def test_cells_put_one_cell_on_every_dot():
+    h = parse(SWITCHING_0010)
+    c = to_cells(h)
+    assert c.shape == (6, 6, 2)
+    assert list(c[0, :, 0]) == [0, 0, 7, 5, 0, 0]       # dot row 0: left gaps (and the right border)
+    assert c[5, 5].tolist() == [0, 0]                    # past the last dot: always empty
 
 
-def test_constrained_decoding_accepts_every_valid_sequence():
-    toks = to_tokens(to_sparse(parse(SWITCHING_0010)))
-    for k, t in enumerate(toks):
-        assert t in allowed_next(toks[:k])
+def test_constrained_decoding():
+    toks = to_tokens(to_code(parse(SWITCHING_0010)))
     assert allowed_next(toks) == []
-    assert allowed_next([]) [-1] == "<end>"
-    assert "<1>" not in allowed_next(["<r1>"])                    # a row token needs a column first
-    assert "<c5>" not in allowed_next(["<r1>"])                   # odd row: gaps sit on even columns
-    assert "<c2>" not in allowed_next(["<r1>", "<c4>", "<7>"])    # columns only go right
-    assert "<r1>" not in allowed_next(["<r1>", "<c4>", "<7>"])    # rows only go down
+    assert "3" not in allowed_next([])                         # top border: only walls or horns facing up
+    assert "<end>" not in allowed_next(list("00000|"))          # too short to end
+    assert allowed_next(list("00000|007500")) == ["|"]          # row full
+    assert "1" not in allowed_next(list("00000|"))               # left border
+    assert "<end>" in allowed_next(list("000|0000|000|"))
 
 
 def test_bad_codes_are_refused():
     with pytest.raises(KolamError):
         from_grid(np.array([[0, 0, 0], [0, 1, 0], [0, 0, 0]], np.int8))   # a digit on a dot
     with pytest.raises(KolamError):
-        sparse_grid([])
+        code_grid(["000", "0000"])                                           # even number of rows
+    with pytest.raises(KolamError):
+        code_grid(["000", "000", "000"])                                     # row 1 needs cols+1 digits
