@@ -19,7 +19,7 @@ You draw a kolam the way you would with three brushes, through the dots of a gri
 |---|---|---|
 | `CROSSING_LOOP` | `c([0,0],[0,4])` | a chain of dots; the line **crosses** (✕) in every gap along the chain |
 | `PARALLEL_LOOP` | `p([2,0],[2,2],[4,2])` | a chain of dots; the strands run **parallel** around them, with no crossings |
-| `HORN` | `h([1,1],N)` · `hl(…,N)` · `hr(…,N)` | a sharp tip grown out of dot `[1,1]`'s line, pointing N/E/S/W: straight / curving a little left / right (aliases `h0` `h1` `h2`). Pointing at an empty spot it is a long crescent; at a used dot, short |
+| `HORN` | `h([1,1],N)` · `hl(…,N)` · `hr(…,N)` | a sharp tip grown out of dot `[1,1]`'s line, pointing N/E/S/W: straight / curving a little left / right (aliases `h0` `h1` `h2`). It points at an empty spot or off the grid and is drawn as a crescent; up to 4 horns may meet in one spot |
 
 Waypoints on the same row or column are filled in. Repeat the first dot to close a ring:
 `c([1,1],[1,3],[3,3],[3,1],[1,1])`.
@@ -53,7 +53,8 @@ The generator works structure first:
 2. Lay random brush strokes with their symmetric copies, keeping only valid ones.
 3. In about 40% of kolams (tree mode), grow the brush lines as a tree, which gives
    single-stroke kolams.
-4. Cover leftover dots by extending chains or adding horns (at most one horn per 5 dots).
+4. Cover leftover dots by extending chains or adding horns (at most one horn per 5 dots). Horns
+   only point at empty spots, so each is a crescent; several may meet in one spot.
 5. Compile, check the geometry, render with a random look (chalk, ink or colour; line
    width, dots, blur, noise, hand jitter), and re-draw any duplicate.
 
@@ -67,6 +68,9 @@ Each line of `labels.jsonl` holds:
 ![36 generated training images](docs/results/gallery.jpg)
 
 ## Is the data good? (3000-sample run, `docs/results/report.md`)
+
+This run predates the crescent-only horn rule (spec §8.4 rule 7): about half its horns are short
+stubs. Regenerate before training.
 
 Every sample is re-checked from its label alone, independently of the generator:
 

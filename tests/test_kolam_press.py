@@ -93,7 +93,10 @@ def test_dsl_aliases_endpoints_and_rings():
     ("h([0,0],NE)", "one dot and a direction"),
     ("x([0,0],[0,1])", "unknown brush"),
     ("c([0,0],[0,1]); h([0,0],E)", "along the brush line"),
-    ("grid(1,3); h([0,0],E); h([0,2],W)", "too close"),     # two crescents into one empty spot
+    ("grid(1,2); h([0,0],E); h([0,1],W)", "too close"),     # two short stubs nose to nose
+    ("grid(3,3); c([0,0],[0,2]); h([1,1],N)", "in use"),     # pointing at a used dot: only a stub
+    ("grid(1,3); hl([0,0],E); hr([0,2],W)", "curls another way"),       # meeting horns curl alike
+    ("grid(2,2); p([0,0],[0,1],[1,1]); h([0,0],S); h([1,1],W)", "inner corner"),
     ("h([0,0],E); hl([0,0],E)", "already has a horn"),
     ("c([0,0],[0,2]); p([0,1],[0,2])", "can.t be both"),
     ("grid(2,2); c([0,0],[0,3])", "outside"),
@@ -292,7 +295,10 @@ HORN_CASES = [
     "grid(3,3); hl([1,1],N); hl([1,1],S)",                     # two horns on one dot
     "grid(3,3); hl([1,1],N); hr([1,1],E)",                     # side by side: each stops at 45 degrees
     "grid(3,3); h([1,1],N); h([1,1],E); h([1,1],S); h([1,1],W)",
-    "grid(3,3); c([0,0],[0,2]); hl([1,1],N)",                  # pointing at a used dot: short
+    "grid(2,3); c([0,0],[1,0]); c([0,2],[1,2]); h([0,0],E); h([0,2],W)",      # facing: tips meet
+    "grid(2,3); p([0,0],[1,0]); p([0,2],[1,2]); hl([0,0],E); hl([0,2],W)",
+    "grid(2,2); c([0,0],[0,1],[1,1]); hr([0,0],S); hr([1,1],W)",              # meeting at 90 degrees
+    "grid(5,5); c([1,1],[1,3],[3,3],[3,1],[1,1]); hl([1,2],S); hl([3,2],N); hl([2,1],E); hl([2,3],W)",
     "grid(1,3); c([0,0],[0,2]); hl([0,0],W); hr([0,2],E)",     # off the grid: crescents past the border
 ]
 
@@ -308,8 +314,8 @@ def test_horns_draw_cleanly_and_decode(prog):
 
 def test_horn_size_follows_the_spot_it_points_at():
     from kolam_press.spec import to_lattice
-    def reach(prog):
-        c = compile_hypergraph(parse(prog))
+    def reach(prog):                    # short horns are free drawings only, not dataset labels
+        c = compile_hypergraph(parse(prog, strict=False), strict=False)
         t = next(t for t in c.config.tips if t.dot == (1, 1))
         o = to_lattice(t.dot)
         return round(((t.point[0] - o[0]) ** 2 + (t.point[1] - o[1]) ** 2) ** 0.5, 3)

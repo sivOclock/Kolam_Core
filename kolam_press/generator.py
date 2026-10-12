@@ -18,7 +18,7 @@ import numpy as np
 from .compiler import compile_hypergraph
 from .dsl import format_program
 from .geometry import check_geometry
-from .hypergraph import Hypergraph, Relation, gate_codes, transform_relation, validate
+from .hypergraph import Hypergraph, Relation, gate_codes, problems, transform_relation
 from .render import Style, random_style, render_kolam, render_panel
 from .spec import CROSSING_LOOP, HORN, HORN_DIRS, HORN_VARIANTS, PARALLEL_LOOP, gate_between, horn_target
 
@@ -210,7 +210,8 @@ def _propose_ring(rng, st: _State, ok, cfg: GenConfig):
 
 
 def _propose_horn(rng, st: _State, target=None):
-    """A horn on a dot of the kolam (or on the bare dot `target`), pointing at a wall of that dot."""
+    """A horn on a dot of the kolam (or on the bare dot `target`), pointing through a wall of that dot
+    at an empty spot or off the grid, so it is drawn as a crescent (docs §10.6)."""
     if target is not None:
         pool = [target]
     else:
@@ -220,7 +221,7 @@ def _propose_horn(rng, st: _State, target=None):
         return None
     for _ in range(6):
         v = pool[rng.integers(len(pool))]
-        dirs = [d for d in HORN_DIRS if (v, d) not in st.horns
+        dirs = [d for d in HORN_DIRS if (v, d) not in st.horns and horn_target(v, d) not in st.used
                 and gate_between(v, horn_target(v, d)) not in st.gates]
         if dirs:
             return Relation(HORN, (v,), HORN_VARIANTS[rng.integers(3)], False, dirs[rng.integers(len(dirs))])
@@ -296,7 +297,7 @@ def _try_set(st: _State, ops, add: Relation, remove: Relation | None = None) -> 
         keep = [r for r in keep if r not in gone]
     new = sorted(_orbit(add, ops, st.rows, st.cols) - set(keep), key=Relation.sort_key)
     trial = keep + new
-    if validate(Hypergraph(st.rows, st.cols, tuple(trial)), strict=False):   # draws; made canonical at the end
+    if problems(Hypergraph(st.rows, st.cols, tuple(trial))):   # a label rule broken; made canonical at the end
         return False
     if st.tree and not brush_line_components(trial)[0]:
         return False

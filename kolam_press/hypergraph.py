@@ -128,7 +128,10 @@ def problems(h: Hypergraph) -> list[tuple[str, str]]:
 
     error  it cannot be drawn: off the grid, dots that are not 4-neighbours, one gap given two
            different states, a horn pointing along a brush line, horn tips on top of each other
-    (Anything that draws is a label once canonical; validate(strict=True) also asks for that.)
+    label  it draws, but is not a dataset label: a horn pointing at a dot in use (a short stub, no
+           room for a crescent); horns meeting in one spot that curl different ways, or that grow
+           from the same inner corner of a parallel tube
+    (validate(strict=True) also asks for the canonical form.)
     """
     out: list[tuple[str, str]] = []
     if not (1 <= h.rows <= 32 and 1 <= h.cols <= 32):
@@ -178,8 +181,10 @@ def problems(h: Hypergraph) -> list[tuple[str, str]]:
                 err(f"the gap between {list(a)} and {list(b)} is already a {gate_state[g][0]} of relation "
                     f"{gate_state[g][1]}; one gap can't be both")
             gate_state.setdefault(g, (state, i))
-    # horns: grown out of the wall in front of their dot, tips apart
-    seen, tips = {}, {}
+    # horns: grown out of the wall in front of their dot. Tips stay apart, except that horns pointing
+    # into the same empty spot meet there (crescents, §10.6), all curling the same way
+    used = h.used_vertices()
+    seen, tips, meets = {}, [], {}
     for i, r in horns:
         v, d = r.vertices[0], r.dir
         name = f"relation {i} (HORN)"
@@ -191,19 +196,35 @@ def problems(h: Hypergraph) -> list[tuple[str, str]]:
         if g in gate_state:
             out.append(("error", f"{name}: points {d} along the brush line of relation {gate_state[g][1]}; "
                                  "a horn points at a wall (a gap no loop crosses)"))
-        p = horn_tip(v, d, r.variant, horn_is_long(h, r))
-        # a horn's tip must be clear of every other tip (two crescents into one spot would meet)
-        for q, j in tips.items():
+        t = horn_target(v, d)
+        long = t not in used
+        if not long:
+            out.append(("label", f"{name}: points {d} at dot {list(t)}, which is in use; a horn points at "
+                                 "an empty spot or off the grid (else it is only a short stub)"))
+        p = horn_tip(v, d, r.variant, long)
+        for q, j, tj in tips:
+            if long and tj == t:
+                continue            # meeting in one empty spot
             if (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= 1:
                 out.append(("error", f"{name}: tip too close to the tip of horn {j}"))
-        tips[p] = i
+        tips.append((p, i, t if long else None))
+        if long:
+            for j, u, var in meets.get(t, []):
+                if var != r.variant:
+                    out.append(("label", f"{name}: meets horn {j} in spot {list(t)} but curls another way; "
+                                         "horns meeting in one spot curl the same way"))
+                d = (v[0] + u[0] - t[0], v[1] + u[1] - t[1])     # at 90 degrees: the dot across the corner
+                if d != t and all(gate_state.get(gate_between(x, d), ("",))[0] == JOIN for x in (u, v)):
+                    out.append(("label", f"{name}: meets horn {j} at the inner corner of the parallel tube round "
+                                         f"{list(d)}; both would grow from the same short line"))
+            meets.setdefault(t, []).append((i, v, r.variant))
     return out
 
 
 def validate(h: Hypergraph, strict: bool = True) -> list[str]:
     """Problems as messages: what makes it impossible to draw; with strict (a dataset label) also
     whether it is the canonical label of its picture."""
-    errs = [m for _, m in problems(h)]
+    errs = [m for level, m in problems(h) if strict or level == "error"]
     if strict and not errs and h != h.canonical():
         errs.append("not the canonical label of its picture (use .canonical(): loops are read off the gaps)")
     return errs

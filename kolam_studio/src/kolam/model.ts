@@ -243,7 +243,8 @@ export interface Problem {
 
 const s = (v: Vertex) => `[${v[0]},${v[1]}]`
 
-/** Everything wrong with a hypergraph (port of hypergraph.problems). */
+/** Everything wrong with a hypergraph (port of hypergraph.problems): 'error' cannot be drawn, 'label'
+ *  draws but is not a dataset label (a short stub horn; meeting horns that curl apart or share an inner corner). */
 export function problems(h: Hypergraph): Problem[] {
   const out: Problem[] = []
   if (!(h.rows >= 1 && h.rows <= 32 && h.cols >= 1 && h.cols <= 32)) {
@@ -280,31 +281,50 @@ export function problems(h: Hypergraph): Problem[] {
       if (!have) gateState.set(g, [state, i])
     }
   })
-  // horns: grown out of the wall in front of their dot, tips apart
+  // horns: grown out of the wall in front of their dot. Tips stay apart, except that horns pointing
+  // into the same empty spot meet there (crescents, spec §10.6), all curling the same way
   const seen = new Map<string, number>()
-  const tips: [[number, number], number][] = []
+  const tips: [[number, number], number, string | null][] = []
+  const meets = new Map<string, [number, Vertex, HornVariant][]>()
   for (const [i, r] of horns) {
     const v = r.vertices[0]
     const name = `${SHORT[r.variant!]}#${i}`
-    const err = (m: string) => out.push({ rel: i, level: 'error', message: `${name}: ${m}` })
+    const err = (m: string, level: Problem['level'] = 'error') => out.push({ rel: i, level, message: `${name}: ${m}` })
     const k = `${s(v)}${r.dir}`
     if (seen.has(k)) {
       err(`dot ${s(v)} already has a horn pointing ${r.dir} (#${seen.get(k)})`)
       continue
     }
     seen.set(k, i)
-    const g = gateState.get(JSON.stringify(gateBetween(v, hornTarget(v, r.dir!))))
+    const t = hornTarget(v, r.dir!)
+    const g = gateState.get(JSON.stringify(gateBetween(v, t)))
     if (g) err(`points ${r.dir} along the brush line of #${g[1]}; a horn points at a wall (a gap no loop crosses)`)
-    const p = hornTip(v, r.dir!, r.variant!, hornIsLong(h, r))
-    for (const [q, j] of tips) if ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= 1) err(`tip too close to the tip of horn #${j}`)
-    tips.push([p, i])
+    const long = hornIsLong(h, r)
+    if (!long) err(`points ${r.dir} at dot ${s(t)}, which is in use; a horn points at an empty spot or off the grid (else it is only a short stub)`, 'label')
+    const p = hornTip(v, r.dir!, r.variant!, long)
+    for (const [q, j, tj] of tips) {
+      if (long && tj === s(t)) continue // meeting in one empty spot
+      if ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= 1) err(`tip too close to the tip of horn #${j}`)
+    }
+    tips.push([p, i, long ? s(t) : null])
+    if (long) {
+      for (const [j, u, variant] of meets.get(s(t)) ?? []) {
+        if (variant !== r.variant)
+          err(`meets horn #${j} in spot ${s(t)} but curls another way; horns meeting in one spot curl the same way`, 'label')
+        const d: Vertex = [v[0] + u[0] - t[0], v[1] + u[1] - t[1]] // at 90 degrees: the dot across the corner
+        if ((d[0] !== t[0] || d[1] !== t[1]) &&
+            [u, v].every((x) => gateState.get(JSON.stringify(gateBetween(x, d)))?.[0] === 'JOIN'))
+          err(`meets horn #${j} at the inner corner of the parallel tube round ${s(d)}; both would grow from the same short line`, 'label')
+      }
+      meets.set(s(t), [...(meets.get(s(t)) ?? []), [i, v, r.variant!]])
+    }
   }
   return out
 }
 
 /** strict: every dataset rule (decodes to exactly this label); otherwise only what cannot be drawn. */
 export function validate(h: Hypergraph, strict = true): Problem[] {
-  const out = problems(h)
+  const out = problems(h).filter((p) => strict || p.level === 'error')
   if (strict && !out.length && JSON.stringify(tidy(h.rows, h.cols, h.relations)) !== JSON.stringify(canonical(h)))
     out.push({ rel: -1, level: 'label', message: 'not the canonical label of its picture (loops are read off the gaps)' })
   return out

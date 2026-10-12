@@ -11,10 +11,13 @@ capsules for parallel runs, no inner loop in a box, and horns grown out of the l
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 
 from .compiler import Compiled, Config, HornTip
-from .spec import CROSS, JOIN, Point, horn_curl, horn_dir, horn_shape, is_h_gate, left_of, to_lattice
+from .spec import (CROSS, JOIN, Point, horn_curl, horn_dir, horn_shape, horn_target, is_h_gate, left_of,
+                   to_lattice)
 
 
 def per_segment(pts, n: int) -> int:
@@ -187,11 +190,20 @@ def _seg_intersections(A0, A1, B0, B1):
     return A0 + np.where(hit, t, 0.0)[:, None] * r, hit
 
 
+MEET_R = 0.5   # around a spot where horns meet, their flanks may come close or touch (docs §10.6)
+
+
+def meeting_spots(c: Compiled) -> list[tuple[int, int]]:
+    """Lattice points of the empty spots that two or more horns point into: their tips meet there."""
+    n = Counter(to_lattice(horn_target(t.dot, t.dir)) for t in c.config.tips if t.long)
+    return sorted(p for p, k in n.items() if k > 1)
+
+
 def check_geometry(c: Compiled, n: int = 11, dot_clear: float = 0.4, strand_clear: float = 0.2,
-                   cross_r: float = 0.3, arc_skip: float = 0.9) -> dict:
+                   cross_r: float = 0.3, arc_skip: float = 0.9, meet_r: float = MEET_R) -> dict:
     """Is this a proper kolam? Curves never touch drawn dots (rings pass 0.71 from their dot), strands
-    keep apart except at their designed crossings, every CROSS gap shows exactly one X, and the only
-    corners are horn tips."""
+    keep apart except at their designed crossings and where horns meet, every CROSS gap shows exactly
+    one X, and the only corners are horn tips."""
     rows, cols = c.config.rows, c.config.cols
     issues: list[str] = []
     pts, sid, arc, nxt = [], [], [], []
@@ -260,7 +272,9 @@ def check_geometry(c: Compiled, n: int = 11, dot_clear: float = 0.4, strand_clea
             return np.zeros(len(Q), bool)
         return (np.linalg.norm(Q[:, None, :] - R[None, :, :], axis=-1) < r).any(1)
 
+    meets = np.asarray(meeting_spots(c), dtype=float).reshape(-1, 2)
     at_cross = near_any(P[I], crosses, cross_r) & near_any(P[J], crosses, cross_r)
+    at_cross |= near_any(P[I], meets, meet_r) & near_any(P[J], meets, meet_r)
     bad = (dist < strand_clear) & ~local & ~at_cross
     clear_pairs = dist[~local & ~at_cross]
     min_strand = float(clear_pairs.min()) if len(clear_pairs) else float("inf")
@@ -271,7 +285,7 @@ def check_geometry(c: Compiled, n: int = 11, dot_clear: float = 0.4, strand_clea
     # 4. crossings: every intersection sits on a CROSS gap, one per gap
     adj = (N[I] == J) | (N[J] == I)
     X, hit = _seg_intersections(P[I], P[N[I]], P[J], P[N[J]])
-    hit &= ~adj
+    hit &= ~adj & ~near_any(X, meets, meet_r)       # flanks of meeting horns may touch near their spot
     Xs = np.unique(np.round(X[hit], 4), axis=0)      # an X on a sample point is found from both sides
     found = 0
     if len(Xs):

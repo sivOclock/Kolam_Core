@@ -96,9 +96,10 @@ Kolam_labs/
   line stays 0.75 from its dots and runs, and leaves only to cross at a crossing gap.
   Drawing changes never change labels, programs or gate codes.
 - Horns (spec §10.6): set no gate; `geometry.drawn()` grows each one out of the line in front of its
-  dot with a weight that fades smoothly (no lump). Size follows the drawing: pointing at an empty
-  spot or off the grid → crescent, tip on that spot (reach 2.0); pointing at a used dot → short
-  (1.05). Shapes live in `brushes.json` `HORN.grow`. Unused dots are not drawn (so the generator
+  dot with a weight that fades smoothly (no lump). Pointing at an empty spot or off the grid →
+  crescent, tip on that spot (reach 2.0). Dataset labels allow only crescents (spec §8.4 rule 7);
+  pointing at a used dot gives a short stub (1.05), allowed in free drawing only. 2–4 horns may meet
+  in one empty spot (tips touch; same variant; not two off one parallel inner corner, rule 8). Shapes live in `brushes.json` `HORN.grow`. Unused dots are not drawn (so the generator
   always crops). `observe` gives each horn as (dot, tip point); `decode` reads them back.
 - `kolam_press/compiler.py` is the relation compiler (gate model, hypergraph doc §8). One
   `CROSSING_LOOP` along a row must keep reproducing the notebook's `build_crossing_loop(n)`

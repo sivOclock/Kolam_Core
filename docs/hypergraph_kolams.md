@@ -297,7 +297,8 @@ row reproduces the notebook's `build_crossing_loop(n)` exactly (tested for n = 2
 There are two levels (`hypergraph.problems`):
 - **Free drawing** (`strict=False`, used by `kolam_studio`): only what cannot be drawn is refused:
   dots off the grid, steps between dots that are not 4-neighbours, one gap given two different
-  states, and broken horns (rules 5–6).
+  states, and broken horns (rules 5–6). Free drawings may still have short horns (rule 7) and the
+  meetings that rule 8 refuses.
 - **Dataset label** (`strict=True`, the default; generator and evaluator): all rules below, so the
   picture decodes back to exactly one label.
 
@@ -308,7 +309,9 @@ There are two levels (`hypergraph.problems`):
 | 3 | Each gap is set by at most one relation. | a gate holds exactly one state |
 | 4 | Loops of the same brush never share a dot. Crossing and parallel loops may share dots. | two same-brush chains through one dot would branch there, and the picture could not say which chain is which; different brushes stay distinguishable by their gate states |
 | 5 | A horn points at a wall: the gap in its direction is not set by any loop. One horn per dot and direction. | it grows out of the line that turns in front of its dot |
-| 6 | Horn tips are more than 1 lattice unit apart. | two crescents into one empty spot would meet there |
+| 6 | Horn tips are more than 1 lattice unit apart, except horns pointing into the same empty spot: they meet there (§10.6). | tips must not touch by accident |
+| 7 | A horn points at an empty spot or off the grid, never at a dot in use. | only then is there room for a crescent; at a used dot it can only be a short stub |
+| 8 | Horns meeting in one spot (2 to 4 of them) all have the same variant, and two at 90° do not both grow from the inner corner of one parallel tube (the dot across the corner joined to both by `JOIN` gaps). | mixed curls miss each other and make a loop; two horns on one short inner-corner line collapse it into a leaf |
 
 Under these rules the gate states and tips visible in a drawing decode back to exactly
 one canonical hypergraph (`compiler.decode`). The generator also checks every sample
@@ -372,7 +375,7 @@ of and where its tip is.
    chain is an error, which rule 4 rules out.
 2. **Horns.** The tip's place relative to its dot gives exactly one direction, variant and size
    (§10.6). The size must agree with the dots in use: long exactly when the spot it points at is
-   empty. (The tip alone is not enough: a straight crescent's tip lands on the empty spot, which up
+   empty. Meeting horns share a spot but not a dot, so each is still read from its own dot. (The tip alone is not enough: a straight crescent's tip lands on the empty spot, which up
    to 3 neighbouring dots could point at; the line it grows out of tells which.)
 3. The result is put in canonical form (§8.5).
 
@@ -543,10 +546,11 @@ into a sharp tip (`geometry.grow_horns`, numbers in `brushes.json` `HORN.grow`):
   the horn **blends into whatever line it grows from** (crossing loop, capsule end, tube wall) with
   no lump where it starts. A term `w(1 − w)` opens the two flanks and bends the body for `L`/`R`.
   `T` is repeated, giving the one sharp corner.
-- **Size follows the drawing, not the label.** If the spot the horn points at holds no used dot
-  (an empty spot, or off the grid), it is a **crescent**: the tip lands on that spot (reach 2.0),
-  as in classic sikku kolams (`refs/photo_remake.png`). If it points at a dot some relation uses,
-  it is **short** (reach 1.05), so it stays clear of that dot's loop.
+- **Crescents only in the dataset.** If the spot the horn points at holds no used dot (an empty
+  spot, or off the grid), it is a **crescent**: the tip lands on that spot (reach 2.0), as in
+  classic sikku kolams (`refs/photo_remake.png`). Pointing at a dot some relation uses, the lines
+  are only 0.5 apart, so it can only be a **short** stub (reach 1.05) that reads as a kink. Labels
+  forbid that (rule 7); free drawings still draw it.
 
   | | reach | half | q | open | curl | bend |
   |---|---|---|---|---|---|---|
@@ -555,11 +559,18 @@ into a sharp tip (`geometry.grow_horns`, numbers in `brushes.json` `HORN.grow`):
 
 - Several horns may share a dot. Two horns at 90° on one dot each stop at the 45° line between
   them, so their flanks never overlap.
+- **Meeting horns.** Two to four horns from different dots may point into the same empty spot:
+  facing each other or at 90°. Each keeps its own crescent, and their tips meet on the spot (plain
+  horns touch; left/left or right/right pass close by, a pinwheel for four). They must all curl
+  the same way, and two at 90° must not both grow from the inner corner of one parallel tube
+  (rule 8). `check_geometry` lets strands come close or touch within `MEET_R = 0.5` of a meeting
+  spot (`geometry.meeting_spots`). Reference sheets: `refs/horns_facing.png` (the look, option A
+  chosen) and `refs/horns_meeting.png` (90°, three and four into one spot).
 - **Unused dots are not drawn** (as in real kolams, and so a crescent's tip does not land on a
   dot). The generator therefore always crops empty border rows/columns, so the grid size can be
   read from the picture; the canvas grows to fit crescents that point off the grid.
 - Labels: `{"type": "HORN", "variant": "LEFT_HORN", "vertices": [[r, c]], "dir": "N"}`; DSL
-  `hl([r,c],N)`. Rules 5–6 of §8.4; decoding in §8.8.
+  `hl([r,c],N)`. Rules 5–8 of §8.4; decoding in §8.8.
 
 Reference sheets: `refs/horns_final.png` (L/S/R in six contexts) and `refs/photo_remake.png` (a photographed sikku kolam rebuilt by the engine:
 its gates read off the pixels plus 8 crescents, now `examples/sikku_diamond.kolam`).
@@ -570,7 +581,8 @@ relaxed, e.g. by labelling a kolam by its gate codes (§10.1) rather than by cha
 
 ### 10.7 Open
 
-1. **Old datasets**: images rendered before §10 use old looks, and labels with two-dot horns are no
-   longer valid; regenerate them (`docs/results/` has been).
+1. **Old datasets**: images rendered before §10 use old looks, labels with two-dot horns are no
+   longer valid, and `data/kolams_v2` (and `docs/results/`) still has short horns (rule 7, 54% of
+   its horns); regenerate them.
 2. **Dense sikku kolams** (crossing chains branching at most dots, like `examples/sikku_diamond.kolam`)
    are free drawings only, because of rule 4; see the end of §10.6.
