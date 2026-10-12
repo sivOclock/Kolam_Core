@@ -307,7 +307,7 @@ There are two levels (`hypergraph.problems`):
 | 1 | Loops have ≥ 2 dots. A closed ring needs ≥ 4 dots, with the last dot next to the first. | the smallest cycle of 4-neighbours is a 2×2 square |
 | 2 | Consecutive dots are 4-neighbours. The DSL fills in the dots between waypoints on the same row or column. | diagonal dots have no gate between them |
 | 3 | Each gap is set by at most one relation. | a gate holds exactly one state |
-| 4 | Loops of the same brush never share a dot. Crossing and parallel loops may share dots. | two same-brush chains through one dot would branch there, and the picture could not say which chain is which; different brushes stay distinguishable by their gate states |
+| 4 | The label is the one read off the gaps (`hypergraph.from_gates`): where lines of one brush meet at a dot ('+', 'T'), a line goes straight through and the side branch is a line of its own. Crossing and parallel loops may share dots. | a picture shows its gaps, not how the lines were drawn; one fixed splitting rule gives one label per picture, even for dense sikku kolams |
 | 5 | A horn points at a wall: the gap in its direction is not set by any loop. One horn per dot and direction. | it grows out of the line that turns in front of its dot |
 | 6 | Horn tips are more than 1 lattice unit apart, except horns pointing into the same empty spot: they meet there (§10.6). | tips must not touch by accident |
 | 7 | A horn points at an empty spot or off the grid, never at a dot in use. | only then is there room for a crescent; at a used dot it can only be a short stub |
@@ -575,14 +575,14 @@ into a sharp tip (`geometry.grow_horns`, numbers in `brushes.json` `HORN.grow`):
 Reference sheets: `refs/horns_final.png` (L/S/R in six contexts) and `refs/photo_remake.png` (a photographed sikku kolam rebuilt by the engine:
 its gates read off the pixels plus 8 crescents, now `examples/sikku_diamond.kolam`).
 
-Not yet: the photo kolam is a free drawing, not a dataset label, because its crossing chains
-branch at most dots (rule 4). The generator only makes such dense sikku kolams if rule 4 is
-relaxed, e.g. by labelling a kolam by its gate codes (§10.1) rather than by chains.
+The photo kolam is a valid dataset label: its crossing lines branch at most dots, and rule 4 reads
+them off the gaps. The experimental generators in `kolam_press/systems.py` make kolams of this kind.
 
 ### 10.7 Open
 
 1. **Old datasets**: images rendered before §10 use old looks, labels with two-dot horns are no
    longer valid, and `data/kolams_v2` (and `docs/results/`) still has short horns (rule 7, 54% of
    its horns); regenerate them.
-2. **Dense sikku kolams** (crossing chains branching at most dots, like `examples/sikku_diamond.kolam`)
-   are free drawings only, because of rule 4; see the end of §10.6.
+2. **Generator systems**: `kolam_press/systems.py` tries three more ways to make kolams (2D L-system
+   substitution, gate switching toward one stroke, wave function collapse on tiles from the photo);
+   `python -m kolam_press systems -n 100` writes 100 of each beside the main generator's.

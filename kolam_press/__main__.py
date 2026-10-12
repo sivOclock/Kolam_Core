@@ -6,6 +6,7 @@
     python -m kolam_press generate -n 2000 -o data/kolams --preview 24
     python -m kolam_press evaluate data/kolams
     python -m kolam_press gallery data/kolams -o gallery.png
+    python -m kolam_press systems -n 100 -o data/systems     # experimental generators, side by side
 """
 from __future__ import annotations
 
@@ -75,6 +76,12 @@ def _gallery(a):
     print(f"saved {a.out}")
 
 
+def _systems(a):
+    from .systems import generate_systems
+    generate_systems(a.out, a.n, a.seed)
+    print(f"wrote {a.out}/<system>/sheet.png")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="kolam_press", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -109,6 +116,11 @@ def main(argv=None):
     s.add_argument("--cols", type=int, default=6)
     s.add_argument("--tile", type=int, default=192)
     s.set_defaults(fn=_gallery)
+    y = sub.add_parser("systems", help="n samples from each experimental generator (kolam_press/systems.py)")
+    y.add_argument("-n", type=int, default=100)
+    y.add_argument("-o", "--out", default="data/systems")
+    y.add_argument("--seed", type=int, default=0)
+    y.set_defaults(fn=_systems)
     a = p.parse_args(argv)
     a.fn(a)
 
