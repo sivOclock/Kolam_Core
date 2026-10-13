@@ -1,8 +1,7 @@
 """CLI.
 
     python -m kolam_press draw "c([0,0],[0,3]); hl([1,1],S)" -o kolam.png
-    python -m kolam_press draw -f examples/showcase.kolam -o showcase.png --view panel --seq
-    python -m kolam_press draw -f examples/sikku_diamond.kolam -o sikku.png --view kolam
+    python -m kolam_press draw -f my.kolam -o my.png --view panel --seq
     python -m kolam_press generate -n 2000 -o data/kolams --preview 24
     python -m kolam_press evaluate data/kolams
     python -m kolam_press gallery data/kolams -o gallery.png

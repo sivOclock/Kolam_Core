@@ -26,14 +26,23 @@ from PIL import Image
 from .compiler import Config, compile_hypergraph, trace
 from .dsl import format_program, parse
 from .generator import GROUPS, generate_dataset
-from .gapcode import to_code
+from .encoding import to_encoding
 from .geometry import check_geometry
 from .hypergraph import Hypergraph, Relation, from_gates, gate_codes, loop_gates, problems, transform_relation
 from .render import random_style, render_kolam
 from .spec import CROSS, HORN, HORN_DIRS, HORN_VARIANTS, JOIN, SPLIT, gate_between, horn_target
 
 STATES = (SPLIT, CROSS, JOIN)
-EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
+# The sikku kolam from a 'Make Rangoli' photo, rebuilt from its gaps: every crossing gap read off the
+# photo's pixels, plus its 8 crescent horns (refs/photo_remake.png).
+# REQUIRED: wfc() learns all its dot pieces from this one kolam. Do not remove.
+WFC_SOURCE_KOLAM = """grid(11, 11)
+c([0,5],[2,5]); c([2,3],[8,3]); c([2,4],[2,6]); c([2,7],[8,7]); c([4,1],[6,1]); c([4,2],[4,3])
+c([4,4],[1,4],[1,6],[4,6]); c([4,5],[6,5]); c([4,7],[4,8]); c([4,9],[6,9]); c([5,0],[5,2])
+c([5,4],[5,6]); c([5,8],[5,10]); c([6,2],[6,3]); c([6,4],[9,4],[9,6],[6,6]); c([6,7],[6,8])
+c([8,4],[8,6]); c([8,5],[10,5]); c([3,2],[3,8],[7,8],[7,2],[3,2])
+hl([1,4],W); hl([3,8],N); hl([7,2],S); hl([9,6],E); hr([1,6],E); hr([3,2],N); hr([7,8],S); hr([9,4],W)
+"""
 
 
 # ------------------------------------------------------------------ gate-grid helpers
@@ -228,7 +237,7 @@ def switching(rng) -> tuple[Hypergraph, dict]:
 # ------------------------------------------------------------------ 3. wave function collapse
 def photo_tiles() -> dict:
     """Dot tiles (N, E, S, W gap states) of the photographed sikku kolam with all 8 symmetries."""
-    h = parse((EXAMPLES / "sikku_diamond.kolam").read_text())
+    h = parse(WFC_SOURCE_KOLAM)
     g = loop_gates(h)
     count: dict = {}
     for v in h.used_vertices():
@@ -314,7 +323,7 @@ def write_system(name: str, make, out: Path, n: int, seed: int, size: int = 384)
         style = random_style(rng, size)
         rec = {"id": f"{name}_{i:04d}", "image": f"images/{name}_{i:04d}.png", "system": name,
                "grid": {"rows": h.rows, "cols": h.cols}, "program": format_program(h), "gaps": gate_codes(h),
-               "code": to_code(h),
+               "encoding": to_encoding(h),
                "hypergraph": h.to_json(), "lattice_sequence": [[list(p) for p in s + s[:1]] for s in c.strokes],
                "stats": {"relations": len(h.relations), "strokes": geo["n_strokes"], "crossings": geo["n_crossings"],
                          "coverage": round(len(h.used_vertices()) / (h.rows * h.cols), 3), **meta},

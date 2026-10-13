@@ -198,3 +198,46 @@ button:disabled { opacity: 0.4; cursor: default; color: var(--muted); border-col
   #program { min-height: 190px; }
   .flow-arrow { width: auto; height: 24px; transform: rotate(90deg); }
 }
+
+/* ── encodings page: paste kolam encodings → one chalkboard each ───────── */
+body.scroll { overflow: auto; height: auto; min-height: 100vh; }
+.chalk-nav { background: var(--bg-card); }
+.chalk-nav a { text-decoration: none; color: var(--muted); background: transparent; }
+.chalk-nav a.active { color: var(--chalk); background: var(--bg-panel); }
+.chalk-nav a[href]:hover { color: var(--yellow); }
+
+.enc-page { display: flex; flex-direction: column; gap: 14px; padding: 52px 20px 28px; }
+.enc-input { display: flex; flex-direction: column; gap: 8px; }
+#encodings {
+  height: 160px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--chalk);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  font-family: monospace;
+  resize: vertical;
+}
+#encodings:focus { outline: none; border-color: var(--yellow); }
+
+.enc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+  padding: 11px;
+}
+.enc-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.enc-card .board + .status { margin-top: 10px; }
+.enc-card .board { width: 100%; aspect-ratio: 1; flex: none; }
+.enc-card pre {
+  font-size: 0.7rem;
+  line-height: 1.25;
+  color: var(--muted);
+  overflow: auto;
+  max-height: 0;
+  transition: max-height 0.2s;
+}
+.enc-card.open pre { max-height: 400px; }
+.enc-card .status { cursor: pointer; }

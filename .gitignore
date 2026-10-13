@@ -54,3 +54,6 @@ temp/
 
 # Reference papers (local only)
 ref_papers/
+
+# Rust build output
+kolam_gen/target/

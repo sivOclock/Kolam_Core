@@ -1,0 +1,15 @@
+[package]
+name = "kolam_gen"
+version = "0.1.0"
+edition = "2021"
+description = "Fast kolam encoding generator: the four kolam_press systems, compiled and geometry-checked, encodings only"
+
+[dependencies]
+rayon = "1.10"
+serde_json = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

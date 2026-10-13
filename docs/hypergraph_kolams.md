@@ -430,7 +430,7 @@ image. The program `c([0,0],[0,2]); hl([2,1],S)` on a 3×3 grid is:
 A closed ring adds `"closed": true`. Relations are sorted (crossing loops, parallel
 loops, horns), so equal kolams give byte-equal labels.
 
-Each record also stores `code`, the same label as a gap code (§12): for the example above
+Each record also stores `encoding`, the same label as a kolam encoding (§12): for the example above
 `["000", "0110", "000", "0000", "000", "0000", "040"]` (the horn sits on the bottom border gap). It is
 the training target; the hypergraph is rebuilt from it exactly.
 
@@ -577,7 +577,7 @@ into a sharp tip (`geometry.grow_horns`, numbers in `brushes.json` `HORN.grow`):
   `hl([r,c],N)`. Rules 5–8 of §8.4; decoding in §8.8.
 
 Reference sheets: `refs/horns_final.png` (L/S/R in six contexts) and `refs/photo_remake.png` (a photographed sikku kolam rebuilt by the engine:
-its gates read off the pixels plus 8 crescents, now `examples/sikku_diamond.kolam`).
+its gates read off the pixels plus 8 crescents; its program is `WFC_SOURCE_KOLAM` in `kolam_press/systems.py`).
 
 The photo kolam is a valid dataset label: its crossing lines branch at most dots, and rule 4 reads
 them off the gaps. The experimental generators in `kolam_press/systems.py` make kolams of this kind (§11).
@@ -602,7 +602,13 @@ only if every label rule still holds. Each sample is then checked like any other
 ```bash
 python -m kolam_press generate -n 3000 -o data/kolams_v3      # 1. random
 python -m kolam_press systems  -n 100  -o data/systems        # all four, 100 each, sheet.png per system
+kolam_gen/target/release/kolam_gen generate -n 1000000 -o data/enc_1m   # all four mixed, encodings only
 ```
+
+`kolam_gen/` is a Rust port of the four systems, the compiler, the drawing and `check_geometry`, for
+datasets of millions (about 2,100 kolams/s on 8 cores against about 15/s in Python). It writes encoding
+shards only; `kolam_feed/` renders them while training and re-checks them (`python -m kolam_feed
+verify`). This file and `kolam_press/` stay the definition; the port is checked against them.
 
 ### 11.1 Random: the painter (`generator.py`)
 
@@ -641,7 +647,7 @@ python -m kolam_press systems  -n 100  -o data/systems        # all four, 100 ea
 
 ### 11.4 WFC: the student (wave function collapse)
 
-- Cut a real kolam (`examples/sikku_diamond.kolam`, the photographed one) into **dot pieces**:
+- Cut a real kolam (the photographed sikku, `refs/photo_remake.png`; its program is `WFC_SOURCE_KOLAM` in `systems.py`) into **dot pieces**:
   a dot plus what its 4 gaps do. With the 8 turns and mirrors there are 15 kinds, each counted.
 - Pick a dot layout and symmetry as in switching, then fill the grid like a jigsaw:
   the dot with the **fewest pieces that still fit** its neighbours goes first, gets a piece drawn by
@@ -666,12 +672,12 @@ Substitution averages 10.7 horns a kolam and 83 of 100 have tubes; switching 16 
 `evaluate`'s exact isomorphism check is too slow on large symmetric kolams; fix it before evaluating
 these sets.
 
-## 12. Gap code: the training form of the label (`kolam_press/gapcode.py`)
+## 12. Kolam encoding: the training form of the label (`kolam_press/encoding.py`)
 
 Pictures: `refs/grid_representation.png` (the digits), `refs/representation_examples.png`
 (one kolam in every form), `refs/grid_why.png` (why, how lines are read back, tokenizers).
 
-The hypergraph stays the label (§3). For training it is written as its **gap code**, an exact
+The hypergraph stays the label (§3). For training it is written as its **kolam encoding**, an exact
 equivalent: one digit on every gap of the dot grid, border gaps included, laid out as a plain grid.
 Lines and tubes are already gap states (§10.1); a horn always points through a wall gap, so it is
 written on that gap.
@@ -692,13 +698,13 @@ W horn, an up/down gap only an S or N horn. So the digit only says the curl and 
 most one thing: a horn needs a wall gap, and its target spot is empty, so no horn comes from the other
 side; horns meeting in one spot (§10.6) come in through different gaps.
 
-### 12.2 The code
+### 12.2 The encoding
 
 The gap rows of the lattice (§8.1), top to bottom. They alternate: `cols` digits (the up/down gaps
 above a dot row, or below the last one) and `cols + 1` digits (the left/right gaps of a dot row, both
 borders included); `2·rows + 1` rows, `2·rows·cols + rows + cols` digits (5×5 dots: 60, 12×12: 312).
 Nothing else is stored: no addresses, no size, since the row count and row lengths give
-`rows × cols`. `labels.jsonl` keeps it as a list of digit strings in `code`. The program
+`rows × cols`. `labels.jsonl` keeps it as a list of digit strings in `encoding`. The program
 `grid(5,5); c([0,2],[4,2]); c([1,1],[1,3]); c([2,0],[2,4]); c([3,1],[3,3]); hl([0,2],W);
 hl([4,2],E); hr([0,2],E); hr([4,2],W)` (one drawn line, 8 relations) is:
 
@@ -733,8 +739,8 @@ Two more layouts of the same digits:
 3. Each `3`–`8` is a horn on the dot beside its gap, facing out through it.
 4. That is the canonical hypergraph; program, JSON and picture follow.
 
-`to_code`/`from_code`, `to_grid`/`from_grid`, `to_cells`/`from_cells`, `to_tokens`/`from_tokens` are
-exact inverses (`tests/test_gapcode.py`; all 400 samples of the first systems run round-trip).
+`to_encoding`/`from_encoding`, `to_grid`/`from_grid`, `to_cells`/`from_cells`, `to_tokens`/`from_tokens` are
+exact inverses (`tests/test_encoding.py`; all 400 samples of the first systems run round-trip).
 
 ### 12.4 Models
 
@@ -746,7 +752,7 @@ crop is still right), run on 50×50. Everything global (joining gaps into lines,
 hypergraph) is done by `from_gates`, at any size. On a free image the dot lattice is found first (dot
 heatmap, fit the regular grid); then each gap is read at the midpoint between two dots.
 
-**Writing tokens (a sequence model or a fine-tuned vision-language model).** The code is written row by
+**Writing tokens (a sequence model or a fine-tuned vision-language model).** The encoding is written row by
 row: each row's digits, then `|`, then `<end>`: 11 tokens, `0`–`8`, `|`, `<end>`. Decoding is
 **constrained** (`allowed_next`): the first row sets `cols`, rows then alternate `cols + 1` and `cols`
 digits, `<end>` only after a full `cols`-digit row, and border gaps only hold walls or horns facing out
@@ -757,7 +763,7 @@ label rules (§8.4) are then checked by `validate`. Training is plain next-token
 
 Tokens per kolam on the first systems run (100 each), average / max:
 
-| system | program, own tokens | **code** (digits + row ends) | sparse (address + digit, rows grouped) |
+| system | program, own tokens | **encoding** (digits + row ends) | sparse (address + digit, rows grouped) |
 |---|---|---|---|
 | random | 39 / 123 | **83 / 161** | 70 / 220 |
 | switching | 67 / 160 | **177 / 287** | 210 / 496 |
@@ -766,12 +772,12 @@ Tokens per kolam on the first systems run (100 each), average / max:
 
 - **The program is shorter but harder to learn.** A position is counted across the image (`[7,3]`)
   instead of read at one spot; the model must pick an order and split lines at branches; one mistake can
-  shift or end a line and all after it. In the code, one mistake is one wrong gap.
+  shift or end a line and all after it. In the encoding, one mistake is one wrong gap.
 - **Dropping the zeros does not pay.** Each kept item must then carry its address; on average that costs
-  about what the zeros saved, and in the worst case much more (602 vs 337). The code's length is fixed
+  about what the zeros saved, and in the worst case much more (602 vs 337). The encoding's length is fixed
   by the grid size, its positions are implicit, it has 11 tokens instead of 59, and it is the very
   output of the all-at-once model.
-- **Tokenizers.** A text tokenizer must not see the code as plain digits. GPT-4's `cl100k` cuts the
+- **Tokenizers.** A text tokenizer must not see the encoding as plain digits. GPT-4's `cl100k` cuts the
   rows `00000|007500|00100|…` into `000` `00` `|` `007` `500` `|` `001` `00` …: `007` is wall, wall,
   left horn in one token, so one gap gets different tokens depending on its neighbours. Spacing the
   digits doubles the length (`0`, ` ` per digit). Use our own 11 tokens, or add them as special tokens

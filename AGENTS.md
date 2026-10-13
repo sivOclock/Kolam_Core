@@ -22,9 +22,9 @@ Anchor grid → ordered hypergraph → relation compiler → lattice sequence �
 The ML task is `image → ordered typed hypergraph`. Every synthetic image must have
 an exact hypergraph label. The lattice sequence is a compiled intermediate, not
 the primary label.
-The training target is the label's gap code (`code` in `labels.jsonl`, spec §12): a plain grid of
+The training target is the label's kolam encoding (`encoding` in `labels.jsonl`, spec §12): a plain grid of
 one digit per gap (0 wall, 1 cross, 2 tube, 3–8 horns), rows of `cols` and `cols+1` digits
-alternating; it converts to and from the hypergraph exactly (`kolam_press/gapcode.py`).
+alternating; it converts to and from the hypergraph exactly (`kolam_press/encoding.py`).
 
 ## The 3 forms (only these — see docs/hypergraph_kolams.md §2)
 
@@ -48,7 +48,7 @@ Rules:
 Kolam_labs/
 ├── AGENTS.md
 ├── README.md / todo.md
-├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns, §11 generator systems, §12 gap code)
+├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns, §11 generator systems, §12 kolam encoding)
 ├── docs/references.md
 ├── docs/results/                  # gallery + evaluation report of the current generator
 ├── kolam_press/                   # data generator (Python package)
@@ -58,16 +58,18 @@ Kolam_labs/
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
 │   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
 │   ├── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
-│   ├── gapcode.py                 # gap code: label <-> digit grid / cells / tokens, constrained decoding (spec §12)
+│   ├── encoding.py                # kolam encoding: label <-> digit grid / cells / tokens, constrained decoding (spec §12)
 │   └── systems.py                 # substitution (2D L-system), switching, WFC generators (spec §11)
-├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam
-│   └── src/kolam/                 # TS port of model + compiler + drawn(); reads kolam_press/brushes.json
-├── examples/*.kolam               # brush programs (sikku_diamond = a photographed kolam, free drawing)
+├── kolam_gen/                     # Rust: the four systems at scale → encoding shards (port of kolam_press)
+├── kolam_feed/                    # Python: encoding shards → images rendered on the fly → the model; verify
+├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam;
+│                                  #   encodings.html: paste kolam encodings → one chalkboard each
+│   └── src/kolam/                 # TS port of model + compiler + drawn() + encoding; reads kolam_press/brushes.json
 ├── refs/                          # reference sheets: primitives, mixed options, example kolams
-├── tests/                         # pytest
+├── tests/                         # pytest: kolam encoding round trips, horn digits, constrained decoding
 └── archive/                       # ARCHAIC — old engine, UI, slate-chalk design
     ├── kolam_engine/              # do not touch, do not import, do not revive
-    ├── kolam_engine_demo.ipynb    # original crossing-loop research (reference copied into tests/)
+    ├── kolam_engine_demo.ipynb    # original crossing-loop research (`build_crossing_loop`)
     └── pulli kolam encoder demo.html  # legacy — do not touch
 ```
 
@@ -108,7 +110,7 @@ Kolam_labs/
   always crops). `observe` gives each horn as (dot, tip point); `decode` reads them back.
 - `kolam_press/compiler.py` is the relation compiler (gate model, hypergraph doc §8). One
   `CROSSING_LOOP` along a row must keep reproducing the notebook's `build_crossing_loop(n)`
-  (reference copy in `tests/test_kolam_press.py`).
+  (its test went with the legacy suite; no test guards this now).
 - Notebook prototype: `build_crossing_loop(n_dots)` — n dots → n-1 crossings at
   `(1,2k+2)`, each visited 2× from perpendicular diagonals (forward ↘/↗, backward ↙/↖),
   closed loop. This is the reference `CROSSING_LOOP` compiler. JSON sample in last cell
@@ -119,9 +121,12 @@ Kolam_labs/
 ```bash
 pip install -r requirements.txt                       # numpy, pillow, pytest
 python -m pytest tests -q                             # must stay green
-python -m kolam_press draw -f examples/showcase.kolam -o out.png --view panel
-python -m kolam_press generate -n 3000 -o data/kolams_v1 --preview 16   # data/ is gitignored
-python -m kolam_press evaluate data/kolams_v1         # writes report.md; exit 1 on any failure
+python -m kolam_press draw "c([0,0],[0,3]); p([1,0],[1,3]); hl([1,3],E)" -o out.png --view panel
+python -m kolam_press generate -n 3000 -o data/kolams_v4 --preview 16   # data/ is gitignored
+python -m kolam_press evaluate data/kolams_v4         # writes report.md; exit 1 on any failure
+cd kolam_gen && cargo build --release                # encodings at scale (all four systems)
+kolam_gen/target/release/kolam_gen generate -n 1000000 -o data/enc_1m   # shards, resumable, no images
+python -m kolam_feed verify data/enc_1m --n 5000     # re-check with the Python rules; exit 1 on failure
 cd kolam_studio && npm install && npm run dev        # brush drawing UI on http://localhost:5173
 ```
 (The old `kolam_engine` npm app is archived; `kolam_studio/` is the only npm app.)
@@ -131,6 +136,9 @@ cd kolam_studio && npm install && npm run dev        # brush drawing UI on http:
 - Docs: only `docs/hypergraph_kolams.md` is active. Don't resurrect deleted doc names
   (`NORMAL_LOOP`, `HORN_LEFT`, `HORN_RIGHT`, `dot_port_grammar_summary.md`, `ref_papers/`).
 - Code: new generator / training code lives outside `archive/`. Never import from `archive/`.
+- `kolam_gen/` (Rust) ports the generators, compiler, `drawn()` and `check_geometry` for speed. Python
+  stays the source of truth: change Python first, then the port; `tests/test_kolam_gen.py` checks both
+  give the same geometry verdicts and stats, and that generated encodings pass the Python rules.
 - `kolam_studio/src/kolam/` mirrors `kolam_press` (hypergraph, DSL, compiler). Python is the
   source of truth: when the brush model changes, change both and check that both compile the
   same programs to the same canonical text and traced strokes. The same goes for drawing:

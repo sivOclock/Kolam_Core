@@ -120,7 +120,7 @@ Papers referenced in the Kolam Labs project. PDFs, where kept, are local only (n
 **Published:** ICLR 2022  
 **Link:** https://arxiv.org/abs/2109.10852
 
-**Relevance:** Objects written as sequences of discrete coordinate tokens and read off an image by a decoder. The gap code's token form (spec §12.4) is read off an image the same way, one digit per gap.
+**Relevance:** Objects written as sequences of discrete coordinate tokens and read off an image by a decoder. The kolam encoding's token form (spec §12.4) is read off an image the same way, one digit per gap.
 
 ---
 
@@ -129,5 +129,5 @@ Papers referenced in the Kolam Labs project. PDFs, where kept, are local only (n
 **Authors:** Lucas Beyer et al., Google DeepMind  
 **Link:** https://arxiv.org/abs/2407.07726
 
-**Relevance:** A pretrained vision-language model that adds special location tokens to its vocabulary for detection. The same route fits the 11 gap-code tokens when fine-tuning a ready-made model (spec §12.5).
+**Relevance:** A pretrained vision-language model that adds special location tokens to its vocabulary for detection. The same route fits the 11 kolam-encoding tokens when fine-tuning a ready-made model (spec §12.5).
 

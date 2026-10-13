@@ -27,7 +27,7 @@ Waypoints on the same row or column are filled in. Repeat the first dot to close
 ```bash
 pip install -r requirements.txt
 python -m kolam_press draw "c([0,0],[0,3]); p([1,0],[1,3]); hl([1,3],E)" -o kolam.png
-python -m kolam_press draw -f examples/flower.kolam -o flower.png --view panel --seq
+python -m kolam_press draw -f my.kolam -o my.png --view panel --seq   # a program from a file
 ```
 
 ![brush program | kolam coloured by brush | training image](docs/results/examples.jpg)
@@ -43,9 +43,9 @@ A crossing brush along a row reproduces the notebook's `build_crossing_loop(n)` 
 ## Generating data
 
 ```bash
-python -m kolam_press generate -n 3000 -o data/kolams_v1 --preview 16
-python -m kolam_press evaluate data/kolams_v1       # writes report.md, exits 1 on any failure
-python -m kolam_press gallery  data/kolams_v1 -o gallery.png
+python -m kolam_press generate -n 3000 -o data/kolams_v4 --preview 16
+python -m kolam_press evaluate data/kolams_v4       # writes report.md, exits 1 on any failure
+python -m kolam_press gallery  data/kolams_v4 -o gallery.png
 ```
 
 The generator works structure first:
@@ -62,7 +62,7 @@ Each line of `labels.jsonl` holds:
 - the image path;
 - `program`, the canonical brush program;
 - `hypergraph`, the label in the spec JSON format;
-- `code`, the same label as a gap code (the training target);
+- `encoding`, the same label as a kolam encoding (the training target);
 - `lattice_sequence`, the compiled strokes;
 - stats and the render style.
 
@@ -85,10 +85,10 @@ dots does (wall, cross or tube), then add crescent horns, and every sample passe
 `python -m kolam_press systems -n 100 -o data/systems` writes 100 of each with a contact sheet.
 Details and first results: spec §11.
 
-### The training target: the gap code
+### The training target: the kolam encoding
 
 Every kolam is one digit on each gap between two dots: `0` wall, `1` cross, `2` tube, `3`–`8` a horn
-(plain / left / right, facing right-or-down or left-or-up). The label for training (`code`) is just
+(plain / left / right, facing right-or-down or left-or-up). The label for training (`encoding`) is just
 those digits as a grid, row by row, nothing else:
 
 ```text
@@ -109,10 +109,33 @@ the hypergraph exactly.
 
 Why this form, how lines are read back, and tokenizer pitfalls: spec §12 and `refs/grid_why.png`.
 
+### At scale: `kolam_gen` (Rust) → encodings → `kolam_feed` (Python) → the model
+
+For training, only encodings are stored; images are rendered while training, a new look each epoch.
+
+```bash
+cd kolam_gen && cargo build --release && cd ..
+kolam_gen/target/release/kolam_gen generate -n 1000000 -o data/enc_1m     # ~2,100 kolams/s on 8 cores
+python -m kolam_feed verify  data/enc_1m --n 5000                          # Python re-check, exit 1 on failure
+python -m kolam_feed preview data/enc_1m -o sheet.png
+```
+
+- `kolam_gen` mixes all four systems (default `--mix random=0.55,substitution=0.15,switching=0.15,wfc=0.15`),
+  checks every kolam with the same label rules and geometry check as Python, drops duplicates (drawn
+  again), and writes `shard_00000.jsonl`, … (50k kolams each, about 150 bytes per kolam). A stopped run
+  resumes: finished shards are kept. Every kolam is reproducible from its `seed` (seed, index, attempt).
+- It is a port; Python stays the source of truth. On 700 kolams (83 failing), Rust and Python give the
+  same geometry verdict and the same stats on every one (`tests/test_kolam_gen.py` keeps checking).
+- `kolam_feed.KolamDataset(dir, size=448, transform=None)` is a map-style dataset: item `i` is
+  `{"image", "encoding", "text", "tokens", "system"}`, rendered by `kolam_press` in a random style from
+  (seed, epoch, i); `set_epoch(e)` before each epoch for new looks. Batch with
+  `DataLoader(ds, collate_fn=kolam_feed.collate)` (lists, PIL images kept for a VLM processor), or pass a
+  `transform` that makes tensors. About 17 images/s per process at 448 px.
+
 ## Is the data good? (3000-sample run, `docs/results/report.md`)
 
 This run predates the crescent-only horn rule (spec §8.4 rule 7): about half its horns are short
-stubs. Regenerate before training.
+stubs. It also predates the kolam encoding: its labels have no `encoding` field. Regenerate before training.
 
 Every sample is re-checked from its label alone, independently of the generator:
 
@@ -155,15 +178,16 @@ rounded-versus-pointed differences that a real CNN should resolve. Full report:
 ## Layout
 
 ```text
-kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · systems · gapcode · evaluate
-examples/      brush programs (showcase, flower, one_stroke, sikku_diamond = a photographed kolam)
-tests/         pytest: notebook crossing-loop equivalence, mirror ↔ left/right on pixels, DSL, decode, determinism
+kolam_press/   brushes.json (shared spec) · spec · hypergraph · dsl · compiler · geometry · render · generator · systems · encoding · evaluate
+kolam_gen/     Rust port of the generators + checks: encodings at scale, in shards
+kolam_feed/    Python: encoding shards → images rendered on the fly → the model; verify
+tests/         pytest: kolam encoding round trips, constrained decoding, Rust ↔ Python parity, kolam_feed
 docs/          hypergraph_kolams.md (spec, §8 = brushes) · references.md · results/
 archive/       old TypeScript engine/UI — archived, not used
 ```
 
 ## Next
 
-- Train the image → hypergraph model on this data, with the gap code (`labels.jsonl:code`,
+- Train the image → hypergraph model on this data, with the kolam encoding (`labels.jsonl:encoding`,
   spec §12) as the target.
 - Run a VLM baseline against the same evaluator.

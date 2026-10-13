@@ -1,4 +1,4 @@
-"""Gap code: the training form of a label (docs/hypergraph_kolams.md §12).
+"""Kolam encoding: the training form of a label (docs/hypergraph_kolams.md §12).
 
 A kolam is one digit on every gap of its dot grid, border gaps included:
 
@@ -8,16 +8,16 @@ A kolam is one digit on every gap of its dot grid, border gaps included:
 
 A horn always points through a wall gap, so it is written on that gap; the gap's orientation
 says E/W or S/N. The digits are read back into the canonical hypergraph with `from_gates`, so
-label <-> code is exact.
+label <-> encoding is exact.
 
-    code    the gap rows of the lattice, top to bottom, as digit strings: rows alternate
-            cols digits (up/down gaps) and cols+1 digits (left/right gaps, both borders), 2*rows+1
-            rows in all, e.g. ["00000", "007500", "00100", ...]. Stored in labels.jsonl.
-    grid    the same digits on the (2*rows+1) x (2*cols+1) lattice (dots and centres 0)
-    cells   the same digits one cell per dot: (rows+1) x (cols+1) x 2 = (left gap, top gap) of
-            dot (r, c); cells past the last dot row/col hold 0 in the missing slot. For a model
-            that predicts every gap at once.
-    tokens  the code for a sequence model: each row's digits, then "|", then "<end>" (11 tokens)
+    encoding  the gap rows of the lattice, top to bottom, as digit strings: rows alternate
+              cols digits (up/down gaps) and cols+1 digits (left/right gaps, both borders),
+              2*rows+1 rows in all, e.g. ["00000", "007500", "00100", ...]. Stored in labels.jsonl.
+    grid      the same digits on the (2*rows+1) x (2*cols+1) lattice (dots and centres 0)
+    cells     the same digits one cell per dot: (rows+1) x (cols+1) x 2 = (left gap, top gap) of
+              dot (r, c); cells past the last dot row/col hold 0 in the missing slot. For a model
+              that predicts every gap at once.
+    tokens    the encoding for a sequence model: each row's digits, then "|", then "<end>" (11 tokens)
 """
 from __future__ import annotations
 
@@ -65,25 +65,25 @@ def from_grid(g: np.ndarray) -> Hypergraph:
     return from_gates(rows, cols, gates, horns)
 
 
-def to_code(h: Hypergraph) -> list[str]:
+def to_encoding(h: Hypergraph) -> list[str]:
     g = to_grid(h)
     return ["".join(str(int(x)) for x in g[i, (i + 1) % 2::2]) for i in range(g.shape[0])]
 
 
-def code_grid(code: list[str]) -> np.ndarray:
-    if len(code) < 3 or len(code) % 2 == 0:
-        raise KolamError(f"a code has 2*rows+1 rows (3, 5, 7, ...), not {len(code)}")
-    rows, cols = (len(code) - 1) // 2, len(code[0])
+def encoding_grid(enc: list[str]) -> np.ndarray:
+    if len(enc) < 3 or len(enc) % 2 == 0:
+        raise KolamError(f"an encoding has 2*rows+1 rows (3, 5, 7, ...), not {len(enc)}")
+    rows, cols = (len(enc) - 1) // 2, len(enc[0])
     g = np.zeros((2 * rows + 1, 2 * cols + 1), np.int8)
-    for i, row in enumerate(code):
+    for i, row in enumerate(enc):
         if len(row) != cols + i % 2:
-            raise KolamError(f"code row {i} has {len(row)} digits, wants {cols + i % 2}")
+            raise KolamError(f"encoding row {i} has {len(row)} digits, wants {cols + i % 2}")
         g[i, (i + 1) % 2::2] = [int(x) for x in row]
     return g
 
 
-def from_code(code: list[str]) -> Hypergraph:
-    return from_grid(code_grid(code))
+def from_encoding(enc: list[str]) -> Hypergraph:
+    return from_grid(encoding_grid(enc))
 
 
 def to_cells(h: Hypergraph) -> np.ndarray:
@@ -103,25 +103,25 @@ def from_cells(c: np.ndarray) -> Hypergraph:
     return from_grid(g)
 
 
-def to_tokens(code: list[str]) -> list[str]:
-    return [t for row in code for t in [*row, "|"]] + ["<end>"]
+def to_tokens(enc: list[str]) -> list[str]:
+    return [t for row in enc for t in [*row, "|"]] + ["<end>"]
 
 
 def from_tokens(tokens) -> list[str]:
-    code, row = [], ""
+    enc, row = [], ""
     for t in tokens:
         if t == "<end>":
             break
         if t == "|":
-            code.append(row)
+            enc.append(row)
             row = ""
         else:
             row += t
-    return code
+    return enc
 
 
 def allowed_next(prefix) -> list[str]:
-    """Constrained decoding: the tokens that keep a partial code well formed. The first row sets
+    """Constrained decoding: the tokens that keep a partial encoding well formed. The first row sets
     cols; rows then alternate cols+1 and cols digits; <end> only after a full cols-digit row (never
     the first). Border gaps only hold walls or horns facing out of the grid."""
     rows_done, row = [], []

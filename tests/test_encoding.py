@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 
 from kolam_press import KolamError, parse
-from kolam_press.gapcode import (allowed_next, code_grid, from_cells, from_code, from_grid, from_tokens, to_cells,
-                                 to_code, to_grid, to_tokens)
+from kolam_press.encoding import (allowed_next, encoding_grid, from_cells, from_encoding, from_grid, from_tokens, to_cells,
+                                 to_encoding, to_grid, to_tokens)
 from kolam_press.generator import GenConfig, generate_sample
-from kolam_press.systems import substitution, switching
+from kolam_press.systems import photo_tiles, substitution, switching, wfc
 
 SWITCHING_0010 = ("grid(5,5); c([0,2],[4,2]); c([1,1],[1,3]); c([2,0],[2,4]); c([3,1],[3,3]); "
                   "hl([0,2],W); hl([4,2],E); hr([0,2],E); hr([4,2],W)")
@@ -19,10 +19,10 @@ def same(a, b):
 
 def test_example_code():
     h = parse(SWITCHING_0010)
-    assert to_code(h) == ["00000", "007500", "00100", "001100", "00100", "011110",
+    assert to_encoding(h) == ["00000", "007500", "00100", "001100", "00100", "011110",
                           "00100", "001100", "00100", "008400", "00000"]
-    assert to_tokens(to_code(h))[:7] == ["0", "0", "0", "0", "0", "|", "0"]
-    assert same(from_code(to_code(h)), h)
+    assert to_tokens(to_encoding(h))[:7] == ["0", "0", "0", "0", "0", "|", "0"]
+    assert same(from_encoding(to_encoding(h)), h)
 
 
 @pytest.mark.parametrize("variant,dir_,digit", [
@@ -44,12 +44,12 @@ def test_codes_of_generated_kolams_round_trip():
     for h in hs:
         if not h.relations:
             continue
-        code = to_code(h)
-        assert len(code) == 2 * h.rows + 1 and [len(r) for r in code[:2]] == [h.cols, h.cols + 1]
-        assert same(from_code(code), h)
+        enc = to_encoding(h)
+        assert len(enc) == 2 * h.rows + 1 and [len(r) for r in enc[:2]] == [h.cols, h.cols + 1]
+        assert same(from_encoding(enc), h)
         assert same(from_cells(to_cells(h)), h)
-        assert from_tokens(to_tokens(code)) == code
-        toks = to_tokens(code)
+        assert from_tokens(to_tokens(enc)) == enc
+        toks = to_tokens(enc)
         assert all(t in allowed_next(toks[:k]) for k, t in enumerate(toks))
 
 
@@ -62,7 +62,7 @@ def test_cells_put_one_cell_on_every_dot():
 
 
 def test_constrained_decoding():
-    toks = to_tokens(to_code(parse(SWITCHING_0010)))
+    toks = to_tokens(to_encoding(parse(SWITCHING_0010)))
     assert allowed_next(toks) == []
     assert "3" not in allowed_next([])                         # top border: only walls or horns facing up
     assert "<end>" not in allowed_next(list("00000|"))          # too short to end
@@ -75,6 +75,16 @@ def test_bad_codes_are_refused():
     with pytest.raises(KolamError):
         from_grid(np.array([[0, 0, 0], [0, 1, 0], [0, 0, 0]], np.int8))   # a digit on a dot
     with pytest.raises(KolamError):
-        code_grid(["000", "0000"])                                           # even number of rows
+        encoding_grid(["000", "0000"])                                           # even number of rows
     with pytest.raises(KolamError):
-        code_grid(["000", "000", "000"])                                     # row 1 needs cols+1 digits
+        encoding_grid(["000", "000", "000"])                                     # row 1 needs cols+1 digits
+
+
+def test_wfc_source_kolam():
+    # wfc() learns its dot pieces from WFC_SOURCE_KOLAM in systems.py; this fails if it goes missing
+    tiles = photo_tiles()
+    assert len(tiles) == 15
+    rng = np.random.default_rng(0)
+    for _ in range(5):
+        h, _ = wfc(rng, tiles)
+        assert from_encoding(to_encoding(h)) is not None

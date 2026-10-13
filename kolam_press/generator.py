@@ -18,7 +18,7 @@ import numpy as np
 from .compiler import compile_hypergraph
 from .dsl import format_program
 from .geometry import check_geometry
-from .gapcode import to_code
+from .encoding import to_encoding
 from .hypergraph import Hypergraph, Relation, gate_codes, problems, transform_relation
 from .render import Style, random_style, render_kolam, render_panel
 from .spec import CROSSING_LOOP, HORN, HORN_DIRS, HORN_VARIANTS, PARALLEL_LOOP, gate_between, horn_target
@@ -408,7 +408,7 @@ def generate_sample(index: int, seed: int, cfg: GenConfig, attempt: int = 0):
         "grid": {"rows": h.rows, "cols": h.cols},
         "program": format_program(h),
         "gaps": gate_codes(h),
-        "code": to_code(h),
+        "encoding": to_encoding(h),
         "hypergraph": h.to_json(),
         "lattice_sequence": [[list(p) for p in s + s[:1]] for s in c.strokes],
         "stats": {"relations": len(h.relations), "strokes": geo["n_strokes"], "crossings": geo["n_crossings"],

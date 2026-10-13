@@ -1,6 +1,6 @@
 """Ordered typed hypergraph: the label of every kolam (docs/hypergraph_kolams.md §1-3, §6).
 
-Labels are canonical: one picture, one label. A picture shows its gap codes (which gaps
+Labels are canonical: one picture, one label. A picture shows its gate codes (which gaps
 cross, run parallel or are walls) and its horns, not how the lines were drawn, so the
 canonical label is read off the gaps (`from_gates`): every chain of crossing (or parallel)
 gaps is split into lines by one fixed rule. A line goes on through a dot with 2 such gaps
