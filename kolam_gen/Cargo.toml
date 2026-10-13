@@ -2,7 +2,7 @@
 name = "kolam_gen"
 version = "0.1.0"
 edition = "2021"
-description = "Fast kolam encoding generator: the four kolam_press systems, compiled and geometry-checked, encodings only"
+description = "Fast kolam encoding generator: the four generator systems, compiled and geometry-checked, encodings only"
 
 [dependencies]
 rayon = "1.10"

@@ -9,7 +9,7 @@ the curve travels diagonally from gate to gate; each gate is CROSS, JOIN or SPLI
     HORN(A, dir)   -> no gate; a tip that geometry.drawn() grows out of the line in front of A
 
 Every trace is a closed stroke; `build_crossing_loop(n)` from the notebook is
-exactly the trace of one CROSSING_LOOP along a row (tests/test_kolam_press.py).
+exactly the trace of one CROSSING_LOOP along a row (tests/test_kolam_feed.py).
 """
 from __future__ import annotations
 

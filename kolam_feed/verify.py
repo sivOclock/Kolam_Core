@@ -1,4 +1,4 @@
-"""Re-check kolam_gen output with the Python rules (kolam_press is the source of truth).
+"""Re-check kolam_gen (Rust) output independently, with this package's Python rules.
 
 Every line: the encoding parses, rows and cols agree, no two kolams are the same. A random sample of
 n kolams is then checked in full: a valid canonical dataset label, compiles, passes the geometry
@@ -12,12 +12,11 @@ from collections import Counter
 
 import numpy as np
 
-from kolam_press.compiler import compile_hypergraph, decode, observe
-from kolam_press.encoding import from_encoding, to_encoding
-from kolam_press.geometry import check_geometry
-from kolam_press.hypergraph import KolamError
-
+from .compiler import compile_hypergraph, decode, observe
 from .data import shard_files
+from .encoding import from_encoding, to_encoding
+from .geometry import check_geometry
+from .hypergraph import KolamError
 
 
 def _lines(src):

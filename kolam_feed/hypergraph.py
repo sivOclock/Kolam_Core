@@ -11,12 +11,10 @@ reflected to their smallest form. A HORN is one dot, the direction its tip point
 """
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 
-from .spec import (CROSS, CROSSING_LOOP, HORN, HORN_DIRS, HORN_VARIANTS, JOIN, LEFT_HORN,
-                   PARALLEL_LOOP, RELATION_TYPES, RIGHT_HORN, Point, Vertex, adjacent, gate_between, horn_dir,
-                   horn_target, horn_tip, loop_gate_state)
+from .spec import (CROSS, CROSSING_LOOP, HORN, HORN_DIRS, HORN_VARIANTS, JOIN, PARALLEL_LOOP, RELATION_TYPES,
+                   Point, Vertex, adjacent, gate_between, horn_target, horn_tip, loop_gate_state)
 
 TYPE_ORDER = {CROSSING_LOOP: 0, PARALLEL_LOOP: 1, HORN: 2}
 
@@ -299,123 +297,3 @@ def from_gates(rows: int, cols: int, gates: dict[Point, str], horns=()) -> Hyper
                 rels.append(Relation(rtype, tuple(chain), None, closed).canonical())
     rels += [r.canonical() for r in horns]
     return Hypergraph(rows, cols, tuple(sorted(set(rels), key=Relation.sort_key)))
-
-
-def gate_codes(h: Hypergraph) -> dict[str, list[str]]:
-    """The answer key's gap digits (spec §10.1): 0 wall, 1 cross, 2 parallel. "h": rows x (cols-1)
-    gaps between left/right neighbours, "v": (rows-1) x cols gaps between up/down neighbours."""
-    code = {CROSS: "1", JOIN: "2"}
-    g = loop_gates(h)
-    return {"h": ["".join(code.get(g.get((2 * r + 1, 2 * c + 2)), "0") for c in range(h.cols - 1)) for r in range(h.rows)],
-            "v": ["".join(code.get(g.get((2 * r + 2, 2 * c + 1)), "0") for c in range(h.cols)) for r in range(h.rows - 1)]}
-
-
-def from_gate_codes(rows: int, cols: int, codes: dict[str, list[str]], horns=()) -> Hypergraph:
-    """Inverse of gate_codes (plus the horns): the canonical label."""
-    state = {"1": CROSS, "2": JOIN}
-    gates = {(2 * r + 1, 2 * c + 2): state[x] for r, row in enumerate(codes["h"]) for c, x in enumerate(row) if x in state}
-    gates |= {(2 * r + 2, 2 * c + 1): state[x] for r, row in enumerate(codes["v"]) for c, x in enumerate(row) if x in state}
-    return from_gates(rows, cols, gates, horns)
-
-
-# ---------------------------------------------------------------- symmetry
-def transform_vertex(v: Vertex, op: str, rows: int, cols: int) -> Vertex:
-    r, c = v
-    return {
-        "id": (r, c),
-        "mirror_lr": (r, cols - 1 - c),
-        "mirror_ud": (rows - 1 - r, c),
-        "rot180": (rows - 1 - r, cols - 1 - c),
-        "rot90": (c, rows - 1 - r),        # square grids only
-        "rot270": (cols - 1 - c, r),
-        "transpose": (c, r),
-        "antitranspose": (cols - 1 - c, rows - 1 - r),
-    }[op]
-
-
-REFLECTIONS = {"mirror_lr", "mirror_ud", "transpose", "antitranspose"}
-
-
-def transform_relation(rel: Relation, op: str, rows: int, cols: int) -> Relation:
-    vs = tuple(transform_vertex(v, op, rows, cols) for v in rel.vertices)
-    variant, d = rel.variant, rel.dir
-    if rel.type == HORN:
-        if op in REFLECTIONS and variant in (LEFT_HORN, RIGHT_HORN):
-            variant = RIGHT_HORN if variant == LEFT_HORN else LEFT_HORN
-        f = horn_dir(d)                                  # the direction turns with the grid
-        a, b = vs[0], transform_vertex((rel.vertices[0][0] + f[0], rel.vertices[0][1] + f[1]), op, rows, cols)
-        d = next(k for k in HORN_DIRS if horn_dir(k) == (b[0] - a[0], b[1] - a[1]))
-    return Relation(rel.type, vs, variant, rel.closed, d).canonical()
-
-
-# ---------------------------------------------------------------- isomorphism (§6)
-def _alignments(rel: Relation):
-    vs = list(rel.vertices)
-    if rel.type == HORN:
-        return [vs]
-    if not rel.closed:
-        return [vs, vs[::-1]]
-    k = len(vs)
-    return [seq[i:] + seq[:i] for seq in (vs, vs[::-1]) for i in range(k)]
-
-
-def _rel_sig(r: Relation):
-    return (r.type, r.variant, r.closed, len(r.vertices), r.dir)
-
-
-def iso_hash(h: Hypergraph) -> tuple:
-    """Cheap invariant: equal for isomorphic hypergraphs (used to bucket before exact checks)."""
-    incid: dict = {}
-    for r in h.relations:
-        for k, v in enumerate(r.vertices):
-            role = k if r.type == HORN else -1
-            incid.setdefault(v, []).append((_rel_sig(r), role))
-    per_vertex = sorted(tuple(sorted(x, key=repr)) for x in incid.values())
-    return (tuple(sorted(Counter(_rel_sig(r) for r in h.relations).items(), key=repr)),
-            tuple(map(repr, per_vertex)))
-
-
-def is_isomorphic(h1: Hypergraph, h2: Hypergraph) -> bool:
-    """Exact ordered typed hypergraph isomorphism over the dots the relations use."""
-    if Counter(map(_rel_sig, h1.relations)) != Counter(map(_rel_sig, h2.relations)):
-        return False
-    if len(h1.used_vertices()) != len(h2.used_vertices()):
-        return False
-    rels1 = sorted(h1.relations, key=lambda r: -len(r.vertices))
-    rels2 = list(h2.relations)
-    used = [False] * len(rels2)
-    fwd: dict = {}
-    bwd: dict = {}
-
-    def extend(i: int) -> bool:
-        if i == len(rels1):
-            return True
-        r1 = rels1[i]
-        for j, r2 in enumerate(rels2):
-            if used[j] or _rel_sig(r2) != _rel_sig(r1):
-                continue
-            for target in _alignments(r2):
-                added = []
-                ok = True
-                for a, b in zip(r1.vertices, target):
-                    if a in fwd:
-                        if fwd[a] != b:
-                            ok = False
-                            break
-                    elif b in bwd:
-                        ok = False
-                        break
-                    else:
-                        fwd[a] = b
-                        bwd[b] = a
-                        added.append(a)
-                if ok:
-                    used[j] = True
-                    if extend(i + 1):
-                        return True
-                    used[j] = False
-                for a in added:
-                    del bwd[fwd.pop(a)]
-        return False
-
-    return extend(0)

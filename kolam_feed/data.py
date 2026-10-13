@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
-from kolam_press.compiler import compile_hypergraph
-from kolam_press.encoding import VOCAB, from_encoding, to_tokens
-from kolam_press.render import Style, random_style, render_kolam
+from .compiler import compile_hypergraph
+from .encoding import VOCAB, from_encoding, to_tokens
+from .render import Style, random_style, render_kolam
 
 
 def shard_files(src: str | Path) -> list[Path]:

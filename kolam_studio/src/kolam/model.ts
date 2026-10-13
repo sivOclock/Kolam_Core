@@ -1,8 +1,8 @@
 // Brush model: relations, canonical labels, validation, brush DSL.
-// A port of kolam_press/hypergraph.py + dsl.py; reads the shared kolam_press/brushes.json.
+// The kolam model (kolam_feed/hypergraph.py) + the brush DSL; reads the shared ../brushes.json.
 // Keep the two in step: the Python side is the source of truth.
 
-import brushes from '../../../kolam_press/brushes.json'
+import brushes from '../../../brushes.json'
 
 export type Vertex = [number, number] // anchor dot [row, col]
 export type Point = [number, number] // lattice point [li, lj]

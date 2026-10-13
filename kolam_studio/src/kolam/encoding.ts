@@ -1,4 +1,4 @@
-// Kolam encoding -> hypergraph (port of kolam_press/encoding.py, spec §12).
+// Kolam encoding -> hypergraph (port of kolam_feed/encoding.py, spec §12).
 // One digit per gap: 0 wall, 1 cross, 2 tube, 3 4 5 plain/left/right horn facing E or S,
 // 6 7 8 the same facing W or N. Rows alternate cols digits (up/down gaps) and cols+1 (left/right).
 

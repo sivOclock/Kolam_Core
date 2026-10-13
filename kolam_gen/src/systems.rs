@@ -1,4 +1,4 @@
-//! The gate-grid generators: port of kolam_press/systems.py (docs §11.2-11.4). Each sets gap states
+//! The gate-grid generators (docs §11.2-11.4). Each sets gap states
 //! directly, then adds crescent horns whole symmetric orbits at a time; the label is read off the gaps.
 
 use crate::geometry::trace;
@@ -8,8 +8,8 @@ use std::collections::HashSet;
 
 const STATES: [u8; 3] = [SPLIT, CROSS, JOIN];
 
-/// The photographed sikku kolam (kolam_press/systems.py WFC_SOURCE_KOLAM) as its kolam encoding.
-/// wfc() learns all its dot pieces from it. tests/test_kolam_gen.py checks it against the Python one.
+/// REQUIRED: the photographed sikku kolam (refs/photo_remake.png) as its kolam encoding.
+/// wfc() learns all its dot pieces from it. Do not remove.
 pub const WFC_SOURCE_ENCODING: [&str; 23] = [
     "00000000000", "000000000000", "00000100000", "000071150000", "00001110000", "000001100000",
     "00811011700", "000111111000", "00111011100", "000100001000", "01110101110", "011001100110",

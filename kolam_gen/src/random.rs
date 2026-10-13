@@ -1,4 +1,4 @@
-//! The random painter: port of kolam_press/generator.py sample_hypergraph (docs §11.1).
+//! The random painter (docs §11.1); first written in Python (sample_hypergraph, now retired).
 //! grid -> symmetric brush strokes (kept only when every label rule holds) -> fill bare dots -> crop.
 
 use crate::model::*;

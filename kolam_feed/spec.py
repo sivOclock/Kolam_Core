@@ -1,4 +1,4 @@
-"""Brush spec (brushes.json) and lattice helpers.
+"""Brush spec (../brushes.json, shared with kolam_gen and kolam_studio) and lattice helpers.
 
 Anchor (row, col) -> lattice (2*row+1, 2*col+1). Gates are the lattice points
 with exactly one odd coordinate; centers have both even. See brushes.json.
@@ -24,7 +24,7 @@ HORN_DIRS = ("N", "E", "S", "W")
 
 @lru_cache(maxsize=1)
 def brushes() -> dict:
-    return json.loads((Path(__file__).with_name("brushes.json")).read_text())
+    return json.loads((Path(__file__).resolve().parents[1] / "brushes.json").read_text())
 
 
 def loop_gate_state(rtype: str) -> str:

@@ -17,14 +17,16 @@ Pipeline (hypergraph doc §4–5, §7):
 
 ```text
 Anchor grid → ordered hypergraph → relation compiler → lattice sequence → renderer → image
+kolam_gen (Rust): generators → gaps + horns → checks → encoding shards
+kolam_feed (Python): encoding → hypergraph → strokes → image, rendered on the fly while training
 ```
 
 The ML task is `image → ordered typed hypergraph`. Every synthetic image must have
 an exact hypergraph label. The lattice sequence is a compiled intermediate, not
 the primary label.
-The training target is the label's kolam encoding (`encoding` in `labels.jsonl`, spec §12): a plain grid of
-one digit per gap (0 wall, 1 cross, 2 tube, 3–8 horns), rows of `cols` and `cols+1` digits
-alternating; it converts to and from the hypergraph exactly (`kolam_press/encoding.py`).
+The training target is the label's kolam encoding (`encoding` in the kolam_gen shards, spec §12): a
+plain grid of one digit per gap (0 wall, 1 cross, 2 tube, 3–8 horns), rows of `cols` and `cols+1`
+digits alternating; it converts to and from the hypergraph exactly (`kolam_feed/encoding.py`).
 
 ## The 3 forms (only these — see docs/hypergraph_kolams.md §2)
 
@@ -50,23 +52,23 @@ Kolam_labs/
 ├── README.md / todo.md
 ├── docs/hypergraph_kolams.md      # semantic spec — read this first (§8 brush compiler, §9 DSL + label JSON, §10 drawing primitives + horns, §11 generator systems, §12 kolam encoding)
 ├── docs/references.md
-├── docs/results/                  # gallery + evaluation report of the current generator
-├── kolam_press/                   # data generator (Python package)
-│   ├── brushes.json               # shared brush spec: gate states + horn directions and shapes
-│   ├── spec.py / hypergraph.py    # lattice helpers; labels, validation, isomorphism
-│   ├── dsl.py                     # brush DSL: c(...), p(...), h/hl/hr([r,c],N)
-│   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; decode
-│   ├── geometry.py / render.py    # closed chained Bezier, geometric checks; PIL renderer
-│   ├── generator.py / evaluate.py # random symmetric kolams; dataset correctness + diversity checks
-│   ├── encoding.py                # kolam encoding: label <-> digit grid / cells / tokens, constrained decoding (spec §12)
-│   └── systems.py                 # substitution (2D L-system), switching, WFC generators (spec §11)
-├── kolam_gen/                     # Rust: the four systems at scale → encoding shards (port of kolam_press)
-├── kolam_feed/                    # Python: encoding shards → images rendered on the fly → the model; verify
+├── docs/results/                  # gallery + evaluation report of the first (Python) generator
+├── brushes.json                   # shared brush spec: gate states + horn directions and shapes
+├── kolam_gen/                     # Rust: data generation (spec §11) → encoding shards
+│   └── src/                       # model.rs (labels, rules, symmetry, encoding), geometry.rs (trace, drawn, check),
+│                                  #   random.rs + systems.rs (the four systems), main.rs (generate / check / big)
+├── kolam_feed/                    # Python: reading, rendering, checking, feeding the model
+│   ├── spec.py / hypergraph.py    # lattice helpers; labels, validation, canonical form (from_gates)
+│   ├── encoding.py                # kolam encoding <-> label; grid / cells / tokens; constrained decoding (spec §12)
+│   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; observe / decode
+│   ├── geometry.py / render.py    # closed chained Bezier, drawn(), check_geometry; PIL renderer + random styles
+│   ├── data.py                    # KolamDataset (renders on the fly), collate
+│   └── verify.py                  # independent re-check of kolam_gen output
 ├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam;
 │                                  #   encodings.html: paste kolam encodings → one chalkboard each
-│   └── src/kolam/                 # TS port of model + compiler + drawn() + encoding; reads kolam_press/brushes.json
+│   └── src/kolam/                 # TS port of model + DSL + compiler + drawn() + encoding; reads ../brushes.json
 ├── refs/                          # reference sheets: primitives, mixed options, example kolams
-├── tests/                         # pytest: kolam encoding round trips, horn digits, constrained decoding
+├── tests/                         # pytest; fixtures/kolams.jsonl = 180 reference kolams from the first generator
 └── archive/                       # ARCHAIC — old engine, UI, slate-chalk design
     ├── kolam_engine/              # do not touch, do not import, do not revive
     ├── kolam_engine_demo.ipynb    # original crossing-loop research (`build_crossing_loop`)
@@ -108,9 +110,9 @@ Kolam_labs/
   pointing at a used dot gives a short stub (1.05), allowed in free drawing only. 2–4 horns may meet
   in one empty spot (tips touch; same variant; not two off one parallel inner corner, rule 8). Shapes live in `brushes.json` `HORN.grow`. Unused dots are not drawn (so the generator
   always crops). `observe` gives each horn as (dot, tip point); `decode` reads them back.
-- `kolam_press/compiler.py` is the relation compiler (gate model, hypergraph doc §8). One
-  `CROSSING_LOOP` along a row must keep reproducing the notebook's `build_crossing_loop(n)`
-  (its test went with the legacy suite; no test guards this now).
+- `kolam_feed/compiler.py` (and its Rust twin `kolam_gen/src/geometry.rs`) is the relation compiler
+  (gate model, hypergraph doc §8). One `CROSSING_LOOP` along a row must keep reproducing the
+  notebook's `build_crossing_loop(n)` (`tests/test_kolam_feed.py`).
 - Notebook prototype: `build_crossing_loop(n_dots)` — n dots → n-1 crossings at
   `(1,2k+2)`, each visited 2× from perpendicular diagonals (forward ↘/↗, backward ↙/↖),
   closed loop. This is the reference `CROSSING_LOOP` compiler. JSON sample in last cell
@@ -121,12 +123,11 @@ Kolam_labs/
 ```bash
 pip install -r requirements.txt                       # numpy, pillow, pytest
 python -m pytest tests -q                             # must stay green
-python -m kolam_press draw "c([0,0],[0,3]); p([1,0],[1,3]); hl([1,3],E)" -o out.png --view panel
-python -m kolam_press generate -n 3000 -o data/kolams_v4 --preview 16   # data/ is gitignored
-python -m kolam_press evaluate data/kolams_v4         # writes report.md; exit 1 on any failure
-cd kolam_gen && cargo build --release                # encodings at scale (all four systems)
-kolam_gen/target/release/kolam_gen generate -n 1000000 -o data/enc_1m   # shards, resumable, no images
-python -m kolam_feed verify data/enc_1m --n 5000     # re-check with the Python rules; exit 1 on failure
+cd kolam_gen && cargo build --release                # the generator (all four systems)
+kolam_gen/target/release/kolam_gen generate -n 1000000 -o data/enc_1m   # shards, resumable, no images; data/ is gitignored
+kolam_gen/target/release/kolam_gen big --system substitution --size 64 -o big.jsonl   # one kolam, any size
+python -m kolam_feed verify  data/enc_1m --n 5000    # independent Python re-check; exit 1 on failure
+python -m kolam_feed preview data/enc_1m -o sheet.png   # rendered training images
 cd kolam_studio && npm install && npm run dev        # brush drawing UI on http://localhost:5173
 ```
 (The old `kolam_engine` npm app is archived; `kolam_studio/` is the only npm app.)
@@ -136,16 +137,16 @@ cd kolam_studio && npm install && npm run dev        # brush drawing UI on http:
 - Docs: only `docs/hypergraph_kolams.md` is active. Don't resurrect deleted doc names
   (`NORMAL_LOOP`, `HORN_LEFT`, `HORN_RIGHT`, `dot_port_grammar_summary.md`, `ref_papers/`).
 - Code: new generator / training code lives outside `archive/`. Never import from `archive/`.
-- `kolam_gen/` (Rust) ports the generators, compiler, `drawn()` and `check_geometry` for speed. Python
-  stays the source of truth: change Python first, then the port; `tests/test_kolam_gen.py` checks both
-  give the same geometry verdicts and stats, and that generated encodings pass the Python rules.
-- `kolam_studio/src/kolam/` mirrors `kolam_press` (hypergraph, DSL, compiler). Python is the
-  source of truth: when the brush model changes, change both and check that both compile the
-  same programs to the same canonical text and traced strokes. The same goes for drawing:
-  `kolam_studio/src/kolam/drawn.ts` must draw what `geometry.drawn()` draws (spec §10).
+- Two implementations of the kolam rules, kept in step: `kolam_gen/` (Rust: generates and checks every
+  kolam) and `kolam_feed/` (Python: reads, renders, re-checks independently). Change a rule (spec, label
+  rules, compiler, `drawn()`, geometry check) in both; `tests/test_kolam_gen.py` and
+  `tests/test_kolam_feed.py` hold both to the same answers on `tests/fixtures/kolams.jsonl`, and
+  `kolam_feed verify` checks generated encodings. Generators live only in Rust.
+- `kolam_studio/src/kolam/` mirrors the model too (hypergraph, DSL, compiler, encoding): when the brush
+  model changes, change it as well. The same goes for drawing: `kolam_studio/src/kolam/drawn.ts` must
+  draw what `geometry.drawn()` draws (spec §10).
 - Free drawing vs dataset labels: `strict=True` (default) enforces every label rule; the studio
   uses `strict=False`, which only refuses what cannot be drawn (`hypergraph.problems`).
-- When adding generator code: structure-first per hypergraph doc §5
-  (grid → relations → compose → validate → compile → render). Put `CROSSING_LOOP` /
-  `HORN` / `PARALLEL_LOOP` compilers where both TS engine and Python exporter can
-  share the spec — don't hardcode sequences for dataset output.
+- When adding generator code (in `kolam_gen/`): structure-first per hypergraph doc §5
+  (grid → relations → compose → validate → compile → check). Read gate states and horn shapes
+  from `brushes.json` — don't hardcode sequences for dataset output.

@@ -1,5 +1,5 @@
-//! Gate compiler, drawing and geometric check: port of kolam_press/compiler.py (trace, horn tips) and
-//! geometry.py (drawn: capsules, box holes, horn growth; check_geometry). Same rules and thresholds;
+//! Gate compiler, drawing and geometric check: the same rules as kolam_feed/compiler.py (trace, horn
+//! tips) and kolam_feed/geometry.py (drawn: capsules, box holes, horn growth; check_geometry). Same rules and thresholds;
 //! close pairs are found with a spatial grid instead of all pairs (same pairs, much faster).
 
 use crate::model::*;

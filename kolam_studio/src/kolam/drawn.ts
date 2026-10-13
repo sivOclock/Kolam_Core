@@ -1,4 +1,4 @@
-// What is drawn for a compiled kolam: a port of kolam_press/geometry.py drawn() (spec §10).
+// What is drawn for a compiled kolam: a port of kolam_feed/geometry.py drawn() (spec §10).
 // Parallel runs become capsules, the inner loop of a box is dropped, and horns grow out of the line.
 // Drawing only: the compiled strokes (the label side) are not changed. Python is the source of truth.
 

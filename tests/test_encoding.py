@@ -2,68 +2,68 @@ import json
 
 import numpy as np
 import pytest
+from conftest import kolam
 
-from kolam_press import KolamError, parse
-from kolam_press.encoding import (allowed_next, encoding_grid, from_cells, from_encoding, from_grid, from_tokens, to_cells,
-                                 to_encoding, to_grid, to_tokens)
-from kolam_press.generator import GenConfig, generate_sample
-from kolam_press.systems import photo_tiles, substitution, switching, wfc
+from kolam_feed.encoding import (allowed_next, encoding_grid, from_cells, from_encoding, from_grid, from_tokens,
+                                 to_cells, to_encoding, to_grid, to_tokens)
+from kolam_feed.hypergraph import KolamError
 
-SWITCHING_0010 = ("grid(5,5); c([0,2],[4,2]); c([1,1],[1,3]); c([2,0],[2,4]); c([3,1],[3,3]); "
-                  "hl([0,2],W); hl([4,2],E); hr([0,2],E); hr([4,2],W)")
+C, H = "CROSSING_LOOP", "HORN"
+# switching_0010: grid(5,5); c([0,2],[4,2]); c([1,1],[1,3]); c([2,0],[2,4]); c([3,1],[3,3]);
+#                 hl([0,2],W); hl([4,2],E); hr([0,2],E); hr([4,2],W)
+SWITCHING_0010 = kolam(5, 5, (C, [(r, 2) for r in range(5)]), (C, [(1, 1), (1, 2), (1, 3)]),
+                       (C, [(2, c) for c in range(5)]), (C, [(3, 1), (3, 2), (3, 3)]),
+                       (H, (0, 2), "LEFT_HORN", "W"), (H, (4, 2), "LEFT_HORN", "E"),
+                       (H, (0, 2), "RIGHT_HORN", "E"), (H, (4, 2), "RIGHT_HORN", "W"))
+CODE_0010 = ["00000", "007500", "00100", "001100", "00100", "011110", "00100", "001100", "00100", "008400", "00000"]
 
 
 def same(a, b):
     return json.dumps(a.canonical().to_json()) == json.dumps(b.canonical().to_json())
 
 
-def test_example_code():
-    h = parse(SWITCHING_0010)
-    assert to_encoding(h) == ["00000", "007500", "00100", "001100", "00100", "011110",
-                          "00100", "001100", "00100", "008400", "00000"]
-    assert to_tokens(to_encoding(h))[:7] == ["0", "0", "0", "0", "0", "|", "0"]
-    assert same(from_encoding(to_encoding(h)), h)
+def test_example_encoding():
+    assert to_encoding(SWITCHING_0010) == CODE_0010
+    assert to_tokens(CODE_0010)[:7] == ["0", "0", "0", "0", "0", "|", "0"]
+    assert same(from_encoding(CODE_0010), SWITCHING_0010)
 
 
 @pytest.mark.parametrize("variant,dir_,digit", [
-    ("h", "E", 3), ("hl", "E", 4), ("hr", "E", 5), ("h", "S", 3), ("hl", "S", 4), ("hr", "S", 5),
-    ("h", "W", 6), ("hl", "W", 7), ("hr", "W", 8), ("h", "N", 6), ("hl", "N", 7), ("hr", "N", 8)])
+    ("PLAIN_HORN", "E", 3), ("LEFT_HORN", "E", 4), ("RIGHT_HORN", "E", 5),
+    ("PLAIN_HORN", "S", 3), ("LEFT_HORN", "S", 4), ("RIGHT_HORN", "S", 5),
+    ("PLAIN_HORN", "W", 6), ("LEFT_HORN", "W", 7), ("RIGHT_HORN", "W", 8),
+    ("PLAIN_HORN", "N", 6), ("LEFT_HORN", "N", 7), ("RIGHT_HORN", "N", 8)])
 def test_horn_digits(variant, dir_, digit):
-    line = "c([0,1],[2,1])" if dir_ in "EW" else "c([1,0],[1,2])"      # the horn points away from its line
-    h = parse(f"grid(3,3); {line}; {variant}([1,1],{dir_})")
+    line = [(0, 1), (1, 1), (2, 1)] if dir_ in "EW" else [(1, 0), (1, 1), (1, 2)]   # the horn points away from it
+    h = kolam(3, 3, (C, line), (H, (1, 1), variant, dir_))
     g = to_grid(h)
     assert sorted(set(g.ravel()) - {0, 1}) == [digit]
     assert same(from_grid(g), h)
 
 
-def test_codes_of_generated_kolams_round_trip():
-    hs = [parse(generate_sample(i, 3, GenConfig())[0]["program"]) for i in range(40)]
-    for make, seed in ((substitution, 1), (switching, 2)):
-        rng = np.random.default_rng(seed)
-        hs += [make(rng)[0] for _ in range(4)]
-    for h in hs:
-        if not h.relations:
-            continue
-        enc = to_encoding(h)
-        assert len(enc) == 2 * h.rows + 1 and [len(r) for r in enc[:2]] == [h.cols, h.cols + 1]
-        assert same(from_encoding(enc), h)
+def test_encodings_read_back_to_the_python_labels(kolams):
+    """Every fixture encoding reads back to the exact canonical label the Python generator stored,
+    in every layout (encoding, cells, tokens), and every token is allowed by constrained decoding."""
+    for k in kolams:
+        h = from_encoding(k["encoding"])
+        assert [r.to_json() for r in h.relations] == k["relations"]
+        assert to_encoding(h) == k["encoding"]
+        assert len(k["encoding"]) == 2 * h.rows + 1 and [len(r) for r in k["encoding"][:2]] == [h.cols, h.cols + 1]
         assert same(from_cells(to_cells(h)), h)
-        assert from_tokens(to_tokens(enc)) == enc
-        toks = to_tokens(enc)
-        assert all(t in allowed_next(toks[:k]) for k, t in enumerate(toks))
+        toks = to_tokens(k["encoding"])
+        assert from_tokens(toks) == k["encoding"]
+        assert all(t in allowed_next(toks[:i]) for i, t in enumerate(toks))
 
 
 def test_cells_put_one_cell_on_every_dot():
-    h = parse(SWITCHING_0010)
-    c = to_cells(h)
+    c = to_cells(SWITCHING_0010)
     assert c.shape == (6, 6, 2)
     assert list(c[0, :, 0]) == [0, 0, 7, 5, 0, 0]       # dot row 0: left gaps (and the right border)
     assert c[5, 5].tolist() == [0, 0]                    # past the last dot: always empty
 
 
 def test_constrained_decoding():
-    toks = to_tokens(to_encoding(parse(SWITCHING_0010)))
-    assert allowed_next(toks) == []
+    assert allowed_next(to_tokens(CODE_0010)) == []
     assert "3" not in allowed_next([])                         # top border: only walls or horns facing up
     assert "<end>" not in allowed_next(list("00000|"))          # too short to end
     assert allowed_next(list("00000|007500")) == ["|"]          # row full
@@ -71,20 +71,10 @@ def test_constrained_decoding():
     assert "<end>" in allowed_next(list("000|0000|000|"))
 
 
-def test_bad_codes_are_refused():
+def test_bad_encodings_are_refused():
     with pytest.raises(KolamError):
         from_grid(np.array([[0, 0, 0], [0, 1, 0], [0, 0, 0]], np.int8))   # a digit on a dot
     with pytest.raises(KolamError):
-        encoding_grid(["000", "0000"])                                           # even number of rows
+        encoding_grid(["000", "0000"])                                    # even number of rows
     with pytest.raises(KolamError):
-        encoding_grid(["000", "000", "000"])                                     # row 1 needs cols+1 digits
-
-
-def test_wfc_source_kolam():
-    # wfc() learns its dot pieces from WFC_SOURCE_KOLAM in systems.py; this fails if it goes missing
-    tiles = photo_tiles()
-    assert len(tiles) == 15
-    rng = np.random.default_rng(0)
-    for _ in range(5):
-        h, _ = wfc(rng, tiles)
-        assert from_encoding(to_encoding(h)) is not None
+        encoding_grid(["000", "000", "000"])                              # row 1 needs cols+1 digits

@@ -1,4 +1,4 @@
-// Gate compiler: hypergraph -> gate states -> traced closed strokes (port of kolam_press/compiler.py).
+// Gate compiler: hypergraph -> gate states -> traced closed strokes (port of kolam_feed/compiler.py).
 // The curve moves diagonally from gate to gate; each gate's state (brushes.json) decides the bounce.
 // Horns set no gate: drawn.ts grows them out of the traced line.
 

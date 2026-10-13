@@ -182,7 +182,7 @@ fn generate(o: &Opts) -> std::io::Result<()> {
     let mix: Vec<String> = SYSTEMS.iter().zip(o.mix).map(|(s, w)| format!("\"{s}\":{w}")).collect();
     let per = |v: [usize; 4]| SYSTEMS.iter().zip(v).map(|(s, c)| format!("\"{s}\":{c}")).collect::<Vec<_>>().join(", ");
     let manifest = format!(
-        "{{\n  \"n\": {},\n  \"seed\": {},\n  \"shard\": {},\n  \"shards\": {},\n  \"mix\": {{{}}},\n  \"systems\": {{{}}},\n  \"random_grid\": [{}, {}],\n  \"redrawn_duplicates\": {{{}}},\n  \"dropped_duplicates\": {{{}}},\n  \"failed\": {},\n  \"seconds\": {:.1},\n  \"generator\": \"kolam_gen {}\",\n  \"brushes\": \"kolam_press/brushes.json\"\n}}\n",
+        "{{\n  \"n\": {},\n  \"seed\": {},\n  \"shard\": {},\n  \"shards\": {},\n  \"mix\": {{{}}},\n  \"systems\": {{{}}},\n  \"random_grid\": [{}, {}],\n  \"redrawn_duplicates\": {{{}}},\n  \"dropped_duplicates\": {{{}}},\n  \"failed\": {},\n  \"seconds\": {:.1},\n  \"generator\": \"kolam_gen {}\",\n  \"brushes\": \"brushes.json\"\n}}\n",
         o.n, o.seed, o.shard, n_shards, mix.join(", "), per(counts), o.cfg.min_size, o.cfg.max_size,
         per(redrawn), per(dropped), failed, secs, env!("CARGO_PKG_VERSION")
     );

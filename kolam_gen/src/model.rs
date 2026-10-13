@@ -1,6 +1,6 @@
 //! Kolam model: brush spec, relations, symmetry, label rules, the gate grid and the kolam encoding.
-//! Port of kolam_press/spec.py, hypergraph.py and encoding.py (docs/hypergraph_kolams.md §1-3, §8, §12).
-//! Python is the source of truth; `kolam_gen check` and tests/test_kolam_gen.py keep the two in step.
+//! Same rules as kolam_feed/spec.py, hypergraph.py and encoding.py (docs/hypergraph_kolams.md §1-3, §8, §12).
+//! `kolam_gen check` and tests/test_kolam_gen.py keep Rust and Python in step.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -78,7 +78,7 @@ pub fn spec() -> &'static Spec {
     static S: OnceLock<Spec> = OnceLock::new();
     S.get_or_init(|| {
         let j: serde_json::Value =
-            serde_json::from_str(include_str!("../../kolam_press/brushes.json")).expect("brushes.json");
+            serde_json::from_str(include_str!("../../brushes.json")).expect("brushes.json");
         let horn = &j["relations"]["HORN"];
         let shape = |k: &str| {
             let g = &horn["grow"][k];

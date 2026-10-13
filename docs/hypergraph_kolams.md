@@ -222,11 +222,11 @@ Every synthetic image therefore has an **exact, automatically generated structur
 
 ---
 
-## 8. Brush Compilation (gate model) — implemented in `kolam_press/`
+## 8. Brush Compilation (gate model) — implemented in `kolam_gen/` (Rust) and `kolam_feed/` (Python)
 
 This section pins down the *primitive formation* of each of the 3 forms so the
 compiler in §4 is exact. The shared, language-neutral spec is
-`kolam_press/brushes.json`.
+`brushes.json` (repo root).
 
 ### 8.1 Lattice, gates, centres
 
@@ -379,7 +379,7 @@ of and where its tip is.
    to 3 neighbouring dots could point at; the line it grows out of tells which.)
 3. The result is put in canonical form (§8.5).
 
-## 9. Brush DSL and label JSON (`kolam_press/dsl.py`, `hypergraph.py`)
+## 9. Brush DSL and label JSON (`kolam_studio/src/kolam/model.ts`, `kolam_feed/hypergraph.py`)
 
 The hypergraph is the label; the brush DSL is a compact text form of the same thing,
 and the natural output for a sequence model (about 6× shorter than the JSON).
@@ -434,15 +434,18 @@ Each record also stores `encoding`, the same label as a kolam encoding (§12): f
 `["000", "0110", "000", "0000", "000", "0000", "040"]` (the horn sits on the bottom border gap). It is
 the training target; the hypergraph is rebuilt from it exactly.
 
-### 9.3 What `hypergraph.py` provides
+### 9.3 Where the label rules live
 
-| function | job | used by |
+| job | Python (`kolam_feed/hypergraph.py`) | Rust (`kolam_gen/src/model.rs`) |
 |---|---|---|
-| `Relation.canonical`, `Hypergraph.canonical` | one label per picture (§8.5) | everything |
-| `validate` | the composition rules of §8.4 | DSL, generator, evaluator |
-| `transform_relation` | mirror / rotate a relation (a horn's direction turns with it); reflections swap `LEFT_HORN` ↔ `RIGHT_HORN` | symmetric generation |
-| `is_isomorphic`, `iso_hash` | exact §6 isomorphism, with a cheap pre-bucketing hash | diversity report, model scoring |
-| `to_json`, `from_json` | the label format above | dataset I/O |
+| one label per picture (§8.5) | `Relation.canonical`, `Hypergraph.canonical`, `from_gates` | lines read off the gaps when encoded |
+| the composition rules of §8.4 | `problems`, `validate` | `problems`, `horns_bad` |
+| mirror / rotate a relation (a horn's direction turns with it; reflections swap `LEFT_HORN` ↔ `RIGHT_HORN`) | — | `transform_relation`, `orbit` |
+| the label format above | `to_json`, `from_json` | — |
+
+The DSL parser and printer live in the studio (`kolam_studio/src/kolam/model.ts`). Exact §6
+isomorphism was implemented in the first, Python generator (retired); it is not part of the
+pipeline now.
 
 ## 10. Drawing primitives (visual spec)
 
@@ -577,10 +580,10 @@ into a sharp tip (`geometry.grow_horns`, numbers in `brushes.json` `HORN.grow`):
   `hl([r,c],N)`. Rules 5–8 of §8.4; decoding in §8.8.
 
 Reference sheets: `refs/horns_final.png` (L/S/R in six contexts) and `refs/photo_remake.png` (a photographed sikku kolam rebuilt by the engine:
-its gates read off the pixels plus 8 crescents; its program is `WFC_SOURCE_KOLAM` in `kolam_press/systems.py`).
+its gates read off the pixels plus 8 crescents; its encoding is `WFC_SOURCE_ENCODING` in `kolam_gen/src/systems.rs`).
 
 The photo kolam is a valid dataset label: its crossing lines branch at most dots, and rule 4 reads
-them off the gaps. The experimental generators in `kolam_press/systems.py` make kolams of this kind (§11).
+them off the gaps. The gate-grid generators in `kolam_gen/src/systems.rs` make kolams of this kind (§11).
 
 ### 10.7 Open
 
@@ -589,28 +592,28 @@ them off the gaps. The experimental generators in `kolam_press/systems.py` make 
    its horns); regenerate them.
 2. **Generator systems**: four ways to make kolams (§11); not yet mixed into `generate`.
 
-## 11. Generator systems (`kolam_press/generator.py`, `kolam_press/systems.py`)
+## 11. Generator systems (`kolam_gen/src/random.rs`, `kolam_gen/src/systems.rs`)
 
 Picture: `refs/systems_explained.png` (one row per system, step by step).
 
 All four systems choose **gap digits** (§10.1): every gap between two neighbouring dots is
 `0` wall, `1` cross or `2` tube. Once every gap is set, the kolam is fully decided; the label is read
 off the gaps (§8.4 rule 4). Crescent horns (§10.6) are added last, in whole symmetric orbits, and
-only if every label rule still holds. Each sample is then checked like any other: strict
-`validate`, program re-parse, decode from the drawing, `check_geometry`, no duplicates.
+only if every label rule still holds. Each sample is then checked like any other: the label rules,
+`check_geometry`, no duplicates; `python -m kolam_feed verify` re-checks a sample independently in
+Python (strict `validate`, decode from the drawing, `check_geometry`, encoding round trip).
 
 ```bash
-python -m kolam_press generate -n 3000 -o data/kolams_v3      # 1. random
-python -m kolam_press systems  -n 100  -o data/systems        # all four, 100 each, sheet.png per system
 kolam_gen/target/release/kolam_gen generate -n 1000000 -o data/enc_1m   # all four mixed, encodings only
+kolam_gen/target/release/kolam_gen big --system substitution --size 64 -o big.jsonl   # one, any size
 ```
 
-`kolam_gen/` is a Rust port of the four systems, the compiler, the drawing and `check_geometry`, for
-datasets of millions (about 2,100 kolams/s on 8 cores against about 15/s in Python). It writes encoding
-shards only; `kolam_feed/` renders them while training and re-checks them (`python -m kolam_feed
-verify`). This file and `kolam_press/` stay the definition; the port is checked against them.
+The systems were first written in Python (about 15 kolams/s, retired); `kolam_gen/` makes 1,300–2,100
+kolams/s on 8 cores and writes encoding shards only; `kolam_feed/` renders them while training. The
+Python answers on 180 kolams are kept in `tests/fixtures/kolams.jsonl`, and both the Rust and the Python
+checks must keep giving them.
 
-### 11.1 Random: the painter (`generator.py`)
+### 11.1 Random: the painter (`random.rs`)
 
 - Pick a grid (3–8 dots a side) and a symmetry (none, mirror, 180° turn, D2, C4, D4).
 - Lay brush strokes one at a time (a crossing line, a tube line or a horn), each copied at once to
@@ -647,7 +650,7 @@ verify`). This file and `kolam_press/` stay the definition; the port is checked 
 
 ### 11.4 WFC: the student (wave function collapse)
 
-- Cut a real kolam (the photographed sikku, `refs/photo_remake.png`; its program is `WFC_SOURCE_KOLAM` in `systems.py`) into **dot pieces**:
+- Cut a real kolam (the photographed sikku, `refs/photo_remake.png`; its encoding is `WFC_SOURCE_ENCODING` in `systems.rs`) into **dot pieces**:
   a dot plus what its 4 gaps do. With the 8 turns and mirrors there are 15 kinds, each counted.
 - Pick a dot layout and symmetry as in switching, then fill the grid like a jigsaw:
   the dot with the **fewest pieces that still fit** its neighbours goes first, gets a piece drawn by
@@ -669,10 +672,9 @@ All 400 pass every check above.
 | wfc | copies local pieces of a real kolam | looking human | 4% | only its source's pieces (no tubes) |
 
 Substitution averages 10.7 horns a kolam and 83 of 100 have tubes; switching 16 of 100; WFC none.
-`evaluate`'s exact isomorphism check is too slow on large symmetric kolams; fix it before evaluating
-these sets.
+(Measured with the first, Python generator.)
 
-## 12. Kolam encoding: the training form of the label (`kolam_press/encoding.py`)
+## 12. Kolam encoding: the training form of the label (`kolam_feed/encoding.py`)
 
 Pictures: `refs/grid_representation.png` (the digits), `refs/representation_examples.png`
 (one kolam in every form), `refs/grid_why.png` (why, how lines are read back, tokenizers).
@@ -740,7 +742,7 @@ Two more layouts of the same digits:
 4. That is the canonical hypergraph; program, JSON and picture follow.
 
 `to_encoding`/`from_encoding`, `to_grid`/`from_grid`, `to_cells`/`from_cells`, `to_tokens`/`from_tokens` are
-exact inverses (`tests/test_encoding.py`; all 400 samples of the first systems run round-trip).
+exact inverses (`tests/test_encoding.py`; every reference kolam in `tests/fixtures/kolams.jsonl` round-trips).
 
 ### 12.4 Models
 

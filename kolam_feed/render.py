@@ -1,15 +1,14 @@
-"""Rasterise compiled kolams (training images) and brush programs (skeleton previews)."""
+"""Rasterise compiled kolams: the training images (random styles) and the coloured-by-brush view."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
 
 from .compiler import Compiled
 from .geometry import drawn, per_segment, sample_stroke
-from .hypergraph import Hypergraph
-from .spec import CROSSING_LOOP, HORN, LEFT_HORN, PARALLEL_LOOP, RIGHT_HORN, horn_dir, left_of, to_lattice
+from .spec import CROSSING_LOOP, HORN, PARALLEL_LOOP, to_lattice
 
 BRUSH_COLORS = {CROSSING_LOOP: (236, 98, 78), PARALLEL_LOOP: (74, 158, 232), HORN: (86, 196, 120)}
 
@@ -150,59 +149,3 @@ def render_kolam(c: Compiled, style: Style | None = None, coloured: bool = False
             for x, y in cv.px(seg[[0, -1]]):
                 cv.draw.ellipse([x - r, y - r, x + r, y + r], fill=colr)
     return cv.finish()
-
-
-def render_brush(h: Hypergraph, style: Style | None = None) -> Image.Image:
-    """The brush program itself: coloured strokes through the dots (what you 'draw')."""
-    style = style or Style()
-    cv = _Canvas(h.rows, h.cols, style)
-    cv.dots(colour=(120, 124, 138), radius=0.16)
-    w = cv.lw(0.22)
-    for r in h.relations:
-        col = BRUSH_COLORS[r.type]
-        L = np.array([to_lattice(v) for v in r.vertices], float)
-        if r.type == HORN:                     # an arrow out of the dot; one barb shows the curl side
-            f = np.array(horn_dir(r.dir), float)
-            lft = np.array(left_of(horn_dir(r.dir)), float)
-            tip = L[0] + 1.3 * f
-            cv.draw.line(cv.px(np.array([L[0] + 0.35 * f, tip])), fill=col, width=w)
-            barbs = {LEFT_HORN: [1], RIGHT_HORN: [-1]}.get(r.variant, [1, -1])
-            for sgn in barbs:
-                cv.draw.line(cv.px(np.array([tip, tip - 0.5 * f + sgn * 0.45 * lft])), fill=col, width=w)
-            continue
-        if r.closed:
-            L = np.vstack([L, L[:1]])
-        cv.draw.line(cv.px(L), fill=col, width=w, joint="curve")
-        rad = 0.3 * cv.scale
-        for x, y in cv.px(L):
-            cv.draw.ellipse([x - rad, y - rad, x + rad, y + rad], outline=col, width=max(1, w // 2))
-    return cv.finish()
-
-
-def _font(size: int):
-    for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",):
-        try:
-            return ImageFont.truetype(path, size)
-        except OSError:
-            pass
-    return ImageFont.load_default(size=size)
-
-
-def render_panel(c: Compiled, program: str = "", size: int = 320, train_style: Style | None = None,
-                 title: str = "") -> Image.Image:
-    """brush program | kolam coloured by brush | training image, with the program underneath."""
-    base = Style(size=size)
-    views = [render_brush(c.hypergraph, base), render_kolam(c, base, coloured=True),
-             render_kolam(c, replace(train_style, size=size) if train_style else base)]
-    gap, pad = 8, 6
-    lines = ([title] if title else []) + program.splitlines()
-    font = _font(13)
-    text_h = 17 * len(lines) + 2 * pad
-    W = 3 * size + 4 * gap
-    out = Image.new("RGB", (W, size + 2 * gap + text_h), (14, 16, 22))
-    for i, v in enumerate(views):
-        out.paste(v, (gap + i * (size + gap), gap))
-    d = ImageDraw.Draw(out)
-    for k, line in enumerate(lines):
-        d.text((gap + pad, size + 2 * gap + pad + 17 * k), line, fill=(200, 204, 214), font=font)
-    return out
