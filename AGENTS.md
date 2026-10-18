@@ -129,6 +129,7 @@ kolam_gen/target/release/kolam_gen big --system substitution --size 64 -o big.js
 python -m kolam_feed verify  data/enc_1m --n 5000    # independent Python re-check; exit 1 on failure
 python -m kolam_feed preview data/enc_1m -o sheet.png   # rendered training images
 cd kolam_studio && npm install && npm run dev        # brush drawing UI on http://localhost:5173
+python -m kolam_feed serve runs/pilot_seq/last.pt   # model server for the studio's predict.html (drop a photo, see the kolam)
 ```
 (The old `kolam_engine` npm app is archived; `kolam_studio/` is the only npm app.)
 

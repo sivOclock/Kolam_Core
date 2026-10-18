@@ -3,6 +3,9 @@
     python -m kolam_feed verify data/enc_1m --n 5000    # re-check kolam_gen output; exit 1 on any failure
     python -m kolam_feed preview data/enc_1m -o sheet.png --n 36 --aug photo   # presets: none, light, photo, real
     python -m kolam_feed augs data/enc_1m -o augs.png --n 4 --tile 224    # each augmentation on its own
+    python -m kolam_feed train data/enc_1m --model grid --out runs/grid --max-dots 6   # kolam_feed/train.py
+    python -m kolam_feed eval  runs/grid/last.pt data/enc_1m --aug real
+    python -m kolam_feed predict runs/pilot_seq/last.pt photo.jpg --data data/enc_1m -o runs/predict.png
     python -m kolam_feed bench data/enc_1m --size 448   # images per second, one process
 """
 from __future__ import annotations
@@ -118,6 +121,9 @@ def main(argv=None):
     b.add_argument("--size", type=int, default=448)
     b.add_argument("--aug", default="light", help="augmentation preset: none, light, photo, real")
     b.set_defaults(fn=_bench)
+    if (sys.argv[1:] if argv is None else argv)[:1] in (["train"], ["eval"], ["predict"], ["serve"]):
+        from .train import add_parsers          # imports torch, so only when training
+        add_parsers(sub)
     a = p.parse_args(argv)
     a.fn(a)
 
