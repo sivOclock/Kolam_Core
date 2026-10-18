@@ -1,0 +1,1504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 0 — The transformer, box by box · Transformers from our kolam code</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .wrap { max-width: 1340px; }
+
+  /* ---------- layout: the picture pinned on the left, the boxes on the right ---------- */
+  .l0 { display: grid; grid-template-columns: minmax(330px, 520px) minmax(0, 1fr); gap: 28px; align-items: start; }
+  .mapcol { position: sticky; top: 12px; }
+  .mapcard { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 10px 10px 12px; }
+  .maptop { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 2px 4px 8px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 6px 11px; font-size: 13px; background: transparent; color: var(--muted); }
+  .seg button.on { background: #2c3346; color: var(--amber); }
+  #tf { width: 100%; height: auto; max-height: calc(100vh - 128px); display: block; }
+  .mapnow { font-size: 13.5px; padding: 8px 6px 0; min-height: 30px; line-height: 1.4; }
+  .mapnow b { color: var(--amber); }
+  .lessoncol > .card:first-child { margin-top: 0; }
+  @media (max-width: 1000px) {
+    .l0 { grid-template-columns: minmax(0, 1fr); }
+    .mapcol { position: static; }
+    #tf { max-height: none; max-width: 520px; margin: 0 auto; }
+  }
+
+  /* ---------- the picture (shared by the big one and the thumbnails) ---------- */
+  .tfsvg text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .tfsvg .fr { fill: #232837; stroke: #4a536c; stroke-width: 1.3; }
+  .tfsvg .ln { color: #8b94ab; }
+  .tfsvg .ln path { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .tfsvg .ln path.hd { fill: currentColor; stroke: none; }
+  .tfsvg .ln.loop { display: none; }
+  .tfsvg .ln.loop path:first-child, .tfsvg .ln.pass path:first-child { stroke-dasharray: 5 4; }
+  .tfsvg .blk rect { stroke: rgba(0, 0, 0, .35); stroke-width: 1; }
+  .tfsvg .bt { font-size: 13px; font-weight: 650; fill: #1c2029; }
+  .tfsvg .bs { font-size: 10.5px; font-weight: 500; fill: #343a4a; }
+  .tfsvg .lbl { font-size: 12.5px; fill: #eee9dd; }
+  .tfsvg .lbl.sm { font-size: 11px; fill: #b9c0cd; }
+  .tfsvg .nxl { font-size: 15px; font-weight: 700; fill: #eee9dd; }
+  .tfsvg .plus { fill: #232837; stroke: #cdd3df; stroke-width: 1.4; }
+  .tfsvg .plusx { stroke: #eee9dd; stroke-width: 1.6; fill: none; }
+  .tfsvg .wave { fill: #232837; stroke: #cdd3df; stroke-width: 1.2; }
+  .tfsvg .wavep { fill: none; stroke: #eee9dd; stroke-width: 1.3; }
+  .tfsvg .pecon { stroke: #8b94ab; stroke-width: 1.3; }
+  .tfsvg .note { fill: #1b1f29; stroke: #6b7590; stroke-dasharray: 4 3; }
+  .tfsvg .gone { opacity: .13; }
+  #tf .blk, #tf .frameg { cursor: pointer; }
+  #tf .blk, #tf .ln, #tf .frameg { transition: opacity .25s; }
+  #tf.focus [data-k]:not(.on) { opacity: .3; }
+  #tf.focus .gone:not(.on) { opacity: .07; }
+  #tf .gone.on { opacity: .6; }
+  #tf .blk.on rect { stroke: var(--amber); stroke-width: 3; filter: drop-shadow(0 0 6px rgba(232, 185, 106, .6)); }
+  #tf .pe.on .plus, #tf .pe.on .wave { stroke: var(--amber); stroke-width: 2.4; }
+  #tf .tl.on text { fill: var(--amber); font-weight: 700; }
+  #tf .frameg.on .fr { stroke: var(--amber); stroke-width: 2.6; }
+  #tf .ln.res.on { color: var(--green); }
+  #tf .ln.bridge.on, #tf .ln.loop.on { color: var(--amber); }
+  #tf .ln.res.on path:first-child, #tf .ln.bridge.on path:first-child, #tf .ln.loop.on path:first-child { stroke-width: 2.4; }
+  #tf .ln.loop.on { display: inline; }
+  #tf .blk:hover rect { filter: brightness(1.08); }
+
+  /* ---------- a box's section ---------- */
+  .sec { scroll-margin-top: 12px; }
+  .sechead { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stepno {
+    font-family: var(--serif); font-size: 15px; color: var(--amber);
+    border: 1px solid #6e5c33; border-radius: 999px; min-width: 30px; height: 30px; padding: 0 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .btag { display: inline-block; padding: 3px 11px; border-radius: 8px; font-size: 13.5px; font-weight: 650; color: #1c2029; background: var(--bc, #cfd5e2); }
+  .emb { --bc: #f0c2c2; } .attn { --bc: #f5cb98; } .norm { --bc: #eaedb0; }
+  .ff { --bc: #bcdff0; } .lin { --bc: #d3cff0; } .soft { --bc: #c3e4c2; }
+  .where { font-size: 13px; color: var(--muted); }
+  .oneline { font-size: 17px; }
+  .eg { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 14px 0; }
+  .eglabel { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); margin-bottom: 8px; }
+  .ours { border-left: 3px solid var(--green); padding: 4px 0 4px 14px; margin-top: 16px; font-size: 15px; }
+  .ourslabel { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--green); margin-bottom: 3px; }
+  .kolamnote { color: var(--green); }
+  .eg svg { width: 100%; height: auto; display: block; }
+  .cklab { font-size: 12px; fill: var(--muted); }
+  #clocks { max-width: 640px; } #ffnet { max-width: 640px; } #shiftfig { max-width: 560px; } #align { max-width: 520px; }
+
+  /* intro */
+  .trans { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tarrow { font-size: 22px; color: var(--amber); padding: 0 6px; }
+  .parts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+  .parts > div { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 14.5px; }
+  @media (max-width: 700px) { .parts { grid-template-columns: 1fr; } }
+  .legend2 { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13.5px; color: var(--muted); }
+  .cdot { width: 13px; height: 13px; border-radius: 4px; display: inline-block; vertical-align: -2px; margin-right: 6px; background: var(--bc); }
+
+  /* 1 inputs */
+  .tokrow { display: flex; gap: 14px; flex-wrap: wrap; }
+  .tokcell { display: inline-grid; justify-items: center; gap: 4px; }
+  .tid { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .patchfig { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-top: 10px; }
+  .patchfig .frame { width: 300px; max-width: 100%; }
+
+  /* little 3-number vectors: animal? colour? small word? */
+  .v3 { display: inline-flex; align-items: flex-end; gap: 3px; vertical-align: middle; }
+  .v3name { font-family: var(--mono); font-size: 13.5px; margin-right: 5px; align-self: center; }
+  .v3c { width: 11px; height: 26px; background: #1b1f29; border-radius: 2px; display: inline-flex; align-items: flex-end; overflow: hidden; }
+  .v3b { width: 100%; display: block; }
+  .v3bars { display: inline-flex; align-items: flex-end; gap: 3px; }
+  .v3bars .v3c:nth-child(1) .v3b { background: var(--amber); }
+  .v3bars .v3c:nth-child(2) .v3b { background: var(--blue); }
+  .v3bars .v3c:nth-child(3) .v3b { background: #9aa2b1; }
+  .v3n { margin-left: 7px; font-family: var(--mono); font-size: 13.5px; align-self: center; }
+  .v3key { font-size: 13.5px; white-space: nowrap; margin-left: 8px; }
+  .v3key i { display: inline-block; width: 9px; height: 13px; border-radius: 2px; vertical-align: -2px; margin-right: 5px; }
+
+  /* 2 embedding */
+  .embwrap { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 18px; align-items: center; margin: 8px 0 12px; }
+  @media (max-width: 700px) { .embwrap { grid-template-columns: 1fr; } }
+  .embtab { display: grid; gap: 7px; }
+  .embrow { display: grid; grid-template-columns: 76px 1fr; align-items: center; }
+  .embrow .chip { height: 30px; font-size: 15px; justify-self: start; }
+  .ax { stroke: #59627a; stroke-width: 1.2; }
+  .pt { fill: var(--amber); }
+  .ptl { font-size: 12.5px; fill: var(--ink); font-family: var(--mono); }
+  .grp { fill: rgba(232, 185, 106, .07); stroke: rgba(232, 185, 106, .35); stroke-dasharray: 4 4; }
+
+  /* 3 positions */
+  .ckhl { fill: rgba(232, 185, 106, .08); stroke: rgba(232, 185, 106, .55); stroke-width: 1.3; }
+  .ckface { fill: #1b1f29; stroke: #59627a; stroke-width: 1.2; }
+  .ckhand { stroke: var(--amber); stroke-width: 2.4; stroke-linecap: round; }
+  .ckhub { fill: var(--amber); }
+
+  /* 4 attention */
+  .qkv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+  @media (max-width: 760px) { .qkv { grid-template-columns: 1fr; } }
+  .qk { display: grid; gap: 3px; background: #232837; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; align-content: start; }
+  .qk b { color: var(--amber); }
+  .qk .mono { font-size: 12.5px; color: var(--muted); }
+
+  /* 5 add & norm */
+  .addrows { display: grid; gap: 8px; margin: 6px 0 12px; }
+  .addrow { display: grid; grid-template-columns: 230px 1fr; align-items: center; font-size: 14.5px; }
+  .addrow.hl { color: var(--amber); }
+  @media (max-width: 600px) { .addrow { grid-template-columns: 1fr; gap: 4px; } }
+  .lnctl { display: flex; gap: 22px; flex-wrap: wrap; margin: 10px 0 14px; font-size: 14px; }
+  .lnctl label { display: inline-flex; gap: 8px; align-items: center; }
+  .lnctl .mono { min-width: 56px; color: var(--amber); }
+  .lncols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 600px) { .lncols { grid-template-columns: 1fr; } }
+  .lnrow { display: grid; grid-template-columns: 1fr 64px; gap: 10px; align-items: center; margin-top: 6px; }
+  .lnrow .mono { font-size: 13px; text-align: right; }
+  .strack { position: relative; height: 14px; background: #1b1f29; border-radius: 7px; overflow: hidden; }
+  .strack::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #59627a; }
+  .sfill { position: absolute; top: 0; bottom: 0; background: var(--amber); }
+  .sfill.neg { background: var(--blue); }
+
+  /* 6 feed forward */
+  .ffe { stroke: #3b4258; stroke-width: 1; }
+  .ffe.live { stroke: rgba(232, 185, 106, .55); stroke-width: 1.3; }
+  .ffe.dead { stroke: #2c3141; stroke-dasharray: 3 4; }
+  .ffn { fill: #1b1f29; stroke: #8b94ab; stroke-width: 1.4; }
+  .ffn.out { stroke: var(--amber); }
+  .ffd { fill: #1b1f29; stroke: #3b4258; }
+  .ffd.on { fill: rgba(232, 185, 106, .16); stroke: var(--amber); }
+  .ffdt { font-size: 12.5px; fill: var(--ink); }
+  .ffdt.off { fill: #6f778a; }
+  .ffdv { font-size: 12.5px; fill: var(--amber); font-family: var(--mono); }
+  .ffdv.off { fill: var(--red); }
+
+  /* 7 stack */
+  .stack { display: grid; gap: 4px; margin: 10px 0 12px; max-width: 560px; }
+  .lay { display: grid; grid-template-columns: 112px 1fr auto; gap: 10px; align-items: center; background: #232837; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 14.5px; }
+  .lay .k { color: var(--muted); font-size: 13px; }
+  .lay.top { border-color: #6e5c33; }
+  .upar { text-align: center; color: var(--muted); font-size: 13px; line-height: 1; }
+  .rich { display: inline-flex; gap: 2px; }
+  .rich i { width: 9px; height: 14px; border-radius: 2px; background: #2f3547; display: inline-block; }
+  .rich i.f { background: var(--amber); }
+
+  /* 8 + 9 the writer's input */
+  .sch { fill: #20242f; stroke: var(--grey); stroke-width: 1.4; }
+  .sch.tgt { stroke: var(--amber); }
+  .scht { font-family: var(--mono); font-size: 14px; fill: var(--ink); }
+  .sup { stroke: #59627a; stroke-width: 1.3; stroke-dasharray: 3 3; }
+  .sarr { stroke: var(--amber); stroke-width: 1.6; fill: none; }
+  .slotswrap { overflow-x: auto; margin: 10px 0 6px; }
+  .slots { display: grid; grid-template-columns: 82px repeat(10, minmax(40px, 1fr)); gap: 6px 4px; align-items: center; min-width: 560px; }
+  .slh { font-size: 12.5px; color: var(--muted); }
+  .slc { display: flex; justify-content: center; }
+  .slc.stamp { font-family: var(--mono); font-size: 12px; color: var(--green); }
+  .slc.more { justify-content: flex-start; font-size: 12.5px; color: var(--muted); }
+  .chip.sm { height: 28px; font-size: 14px; min-width: 26px; padding: 0 6px; animation: none; }
+
+  /* 10 mask */
+  .maskmini { display: grid; grid-template-columns: 70px repeat(4, minmax(34px, 56px)); gap: 4px; margin: 4px 0 12px; }
+  .mm { height: 30px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .mm.ok { background: #35513f; color: #9fe0b2; }
+  .mm.no { background: #3a2730; color: var(--red); }
+  .mmh { font-family: var(--mono); font-size: 12.5px; color: var(--muted); text-align: center; align-self: end; }
+  .mmh.row { text-align: right; align-self: center; padding-right: 6px; }
+
+  /* 11 cross-attention */
+  .alw { fill: #20242f; stroke: var(--grey); stroke-width: 1.4; }
+  .alw.fr { stroke: var(--amber); cursor: pointer; }
+  .alw.fr.sel { fill: #3a3326; stroke-width: 2.4; }
+  .alt { font-family: var(--mono); font-size: 14px; fill: var(--ink); pointer-events: none; }
+  .alp { font-family: var(--mono); font-size: 12.5px; fill: var(--amber); }
+  .xwrap { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; margin-top: 10px; }
+  .xwrap .frame { width: 290px; max-width: 100%; }
+  .xside { flex: 1; min-width: 220px; }
+  .xpick { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .xopt { display: inline-grid; justify-items: center; gap: 3px; cursor: pointer; }
+  .xopt .chip { cursor: pointer; }
+  .xopt.sel .chip { background: #2c3346; box-shadow: 0 0 0 2px var(--amber); }
+
+  /* 12 recipe */
+  .recipe { margin: 4px 0 8px; padding-left: 22px; font-size: 15px; }
+  .recipe li { margin: 4px 0; }
+
+  /* 13 linear */
+  .lrow { display: grid; grid-template-columns: 70px 1fr 52px; gap: 10px; align-items: center; margin-top: 6px; font-size: 14px; }
+  .lrow .num { text-align: right; font-size: 13px; color: var(--muted); }
+
+  /* 14 softmax */
+  .smrow { display: grid; grid-template-columns: 56px minmax(90px, 1fr) 44px minmax(90px, 1.3fr) 44px; gap: 10px; align-items: center; margin-top: 8px; font-size: 14px; }
+  .smrow input { width: 100%; accent-color: var(--amber); }
+  .smrow .smv { text-align: right; color: var(--amber); font-size: 13px; }
+  .smrow.blocked .btrack { background: repeating-linear-gradient(45deg, #20242f 0 6px, #262235 6px 12px); }
+  .smrow.blocked .bnum, .smrow.blocked .smv { color: var(--red); }
+  .smsum { font-family: var(--mono); font-size: 13px; color: var(--muted); margin: 10px 0; }
+  @media (max-width: 600px) {
+    .smrow { grid-template-columns: 50px minmax(0, 1fr) 40px; row-gap: 4px; }
+    .smrow .btrack { grid-column: span 2; }
+  }
+
+  /* 15 stepper */
+  .pstrip { margin-bottom: 10px; }
+  .pcap { font-size: 14.5px; margin-top: 10px; min-height: 44px; }
+
+  /* our model */
+  .tabwrap { overflow-x: auto; margin: 14px 0 6px; }
+  .maptab { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 520px; }
+  .maptab th, .maptab td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .maptab th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  .maptab td:first-child { white-space: nowrap; }
+  .maptab td:last-child { color: var(--green); }
+  .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 12px; }
+  @media (max-width: 700px) { .thumbs { grid-template-columns: 1fr; } }
+  .thumb { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 12px; }
+  .thumb svg { width: 100%; height: auto; display: block; max-width: 230px; margin: 0 auto; }
+  .thumb p { font-size: 13.5px; margin: 8px 2px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="crumb">
+    <a href="index.html">← all lessons</a>
+    <span class="pill">Lesson 0 · start here</span>
+    <a href="lesson-1.html">Lesson 1 →</a>
+  </div>
+
+  <h1>Lesson 0 · The transformer, box by box</h1>
+  <p class="subtitle">The picture on the left is the famous figure from the 2017 paper <i>Attention Is All
+  You Need</i>. GPT, BERT, chat models and our kolam model are all built from these same boxes. We climb
+  it from the bottom, one box at a time, each with a small example. The picture stays beside you and
+  lights up the box we're on. Click any box to jump to it.</p>
+
+  <div class="l0">
+
+    <!-- ================================================================ the picture -->
+    <aside class="mapcol">
+      <div class="mapcard">
+        <div class="maptop">
+          <span class="small muted">the transformer, 2017</span>
+          <span class="seg" role="group" aria-label="labels on the picture">
+            <button data-mode="paper" class="on">2017 paper</button><button data-mode="ours">our Model A</button>
+          </span>
+        </div>
+        <svg id="tf" class="tfsvg" role="img" aria-label="The transformer: the encoder tower on the left, the decoder tower on the right, Linear and Softmax on top"></svg>
+        <div class="mapnow" id="mapnow"></div>
+      </div>
+    </aside>
+
+    <main class="lessoncol">
+
+      <!-- ============================================================ intro -->
+      <section class="card sec" id="s-intro">
+        <h2>Two towers, a bridge, and a picker</h2>
+        <p>The transformer was invented to <b>translate</b>. So our example, all the way up, is a tiny
+        translation:</p>
+        <div class="eg">
+          <div class="trans">
+            <span class="chip">the</span><span class="chip">black</span><span class="chip">cat</span>
+            <span class="tarrow">→</span>
+            <span class="chip">le</span><span class="chip">chat</span><span class="chip">noir</span>
+          </div>
+          <p class="small muted" style="margin:10px 0 0">French: le = the, chat = cat, noir = black. French
+          puts the colour <i>after</i> the animal. Keep that in mind for box 11.</p>
+        </div>
+        <div class="parts">
+          <div><b>Left tower · the reader</b><br>the <i>encoder</i>. Reads “the black cat”, all words at once.</div>
+          <div><b>Right tower · the writer</b><br>the <i>decoder</i>. Writes “le chat noir”, one word at a time.</div>
+          <div><b>Arrows between · the bridge</b><br>the writer looks at what the reader understood.</div>
+          <div><b>The top · the picker</b><br>turns the writer's result into “next word: noir”.</div>
+        </div>
+        <p class="small" style="margin-bottom:6px">The colours tell you each box's job:</p>
+        <div class="legend2">
+          <span><i class="cdot emb"></i>pink · turn tokens into numbers</span>
+          <span><i class="cdot attn"></i>orange · look at other tokens</span>
+          <span><i class="cdot norm"></i>yellow · safety rails</span>
+          <span><i class="cdot ff"></i>blue · think alone</span>
+          <span><i class="cdot lin"></i><i class="cdot soft"></i>purple, green · pick the next word</span>
+        </div>
+        <p class="small muted" style="margin:14px 0 0">Order: the left tower first (boxes 1–7), then the
+        right tower (8–12), then the top (13–15). Every box ends with
+        <span class="kolamnote">in our kolam model</span>: where that box lives in
+        <code>kolam_feed/model.py</code>.</p>
+      </section>
+
+      <!-- ============================================================ 1 inputs -->
+      <section class="card sec" id="s-inputs">
+        <div class="sechead"><span class="stepno">1</span><span class="btag">Inputs</span><span class="where">bottom of the left tower</span></div>
+        <h2>Chop the input into tokens</h2>
+        <p class="oneline">A computer can't read words. So the sentence is cut into pieces called
+        <b>tokens</b>, and each token gets an <b>ID number</b> from a fixed list, the <b>vocabulary</b>.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <div class="tokrow">
+            <span class="tokcell"><span class="chip">the</span><span class="tid">#5</span></span>
+            <span class="tokcell"><span class="chip">black</span><span class="tid">#1043</span></span>
+            <span class="tokcell"><span class="chip">cat</span><span class="tid">#2368</span></span>
+          </div>
+          <p class="small muted" style="margin:10px 0 0">(ID numbers made up.) The paper's vocabulary had
+          about 37,000 tokens. Rare words get cut into smaller pieces:
+          <span class="mono">playing → play + ing</span>.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          Our input is a picture, not words. The model cuts the kolam image into a <b>24 × 24 grid of
+          patches</b>: 576 “tokens”, one per 16 × 16-pixel square of the 384 × 384 image.
+          <div class="patchfig">
+            <div class="frame">
+              <img src="assets/lesson-1.png" alt="the lesson 1 kolam with a 24 by 24 patch grid drawn over it">
+              <svg id="patchgrid" viewBox="0 0 512 512" aria-hidden="true"></svg>
+            </div>
+            <div class="small muted" style="max-width:260px">The amber square is one patch = one token.
+            <code>SeqModel.memory()</code>, <code>model.py:111</code>.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ 2 input embedding -->
+      <section class="card sec" id="s-inemb">
+        <div class="sechead"><span class="stepno">2</span><span class="btag emb">Input Embedding</span><span class="where">left tower · pink</span></div>
+        <h2>Turn each token into a list of numbers</h2>
+        <p class="oneline">Each ID is looked up in a big table. Out comes a <b>vector</b>: a list of
+        numbers that describes the token. The numbers in the table are learned in training.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <p class="small" style="margin-top:0">Pretend each vector had only 3 numbers, and we could name them:
+          <span class="v3key"><i style="background:var(--amber)"></i>animal?</span>
+          <span class="v3key"><i style="background:var(--blue)"></i>colour?</span>
+          <span class="v3key"><i style="background:#9aa2b1"></i>small word?</span></p>
+          <div class="embwrap">
+            <div class="embtab" id="embtab"></div>
+            <svg id="scatter" viewBox="0 0 250 206" role="img" aria-label="the words as points: cat next to dog, black next to white"></svg>
+          </div>
+          <p class="small" style="margin-bottom:0">Similar meaning → similar numbers → nearby points:
+          <b>cat</b> lands next to <b>dog</b>, <b>black</b> next to <b>white</b>. Real vectors have 512
+          numbers (in the paper), and nobody names them. Training decides what each number means.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          The “table” for the image is the <b>CNN eye</b> (ResNet-18, pretrained on photos). It looks at each
+          patch and writes <b>256 numbers</b> about what's drawn there: a curve, a crossing, a dot, bare
+          floor. <code>Encoder</code>, <code>model.py:43</code>.
+        </div>
+      </section>
+
+      <!-- ============================================================ 3 positional encoding -->
+      <section class="card sec" id="s-pos">
+        <div class="sechead"><span class="stepno">3</span><span class="btag">⊕ Positional Encoding</span><span class="where">the ⊕ circles</span></div>
+        <h2>Add a “where am I” stamp</h2>
+        <p class="oneline">The next box, attention, compares tokens but has no sense of order. So every
+        vector gets a <b>position code added</b> to it. That's the ⊕.</p>
+        <div class="eg">
+          <div class="eglabel">simple example · the problem</div>
+          <div class="posrows"><div class="prow" id="posrow1"></div><div class="prow" id="posrow2"></div></div>
+          <button id="postoggle">add position codes</button>
+          <p class="posstatus small" id="posstatus" style="margin-bottom:0"></p>
+        </div>
+        <div class="eg">
+          <div class="eglabel">simple example · the trick: clock hands</div>
+          <p class="small" style="margin-top:0">The paper's code works like a clock with several hands: a
+          fast one, a slower one, a very slow one. Every position gets its own set of hand angles:</p>
+          <svg id="clocks" viewBox="0 0 540 166" role="img" aria-label="three clock hands drawn for positions 0 to 7"></svg>
+          <p class="small" style="margin-bottom:0">Look at <b>pos 0</b> and <b>pos 6</b>: the fast hand
+          points the same way, but the middle hand doesn't. Together, no two positions look the same, and
+          neighbours look alike. Each angle becomes two numbers (its sin and cos), and those are simply
+          <b>added</b> to the token's vector. The paper uses 256 hands, from fast to very, very slow.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          Image patches get the same clock trick twice: once for the patch's <b>row</b>, once for its
+          <b>column</b> (<code>_pos2d</code>, <code>model.py:75</code>). Written tokens get a different stamp:
+          “I'm writing encoding <b>row 3, column 5</b>”, so the writer knows exactly which gap it's on
+          (box 9).
+        </div>
+      </section>
+
+      <!-- ============================================================ 4 multi-head attention -->
+      <section class="card sec" id="s-mha">
+        <div class="sechead"><span class="stepno">4</span><span class="btag attn">Multi-Head Attention</span><span class="where">left tower · orange</span></div>
+        <h2>Every word looks at every other word</h2>
+        <p class="oneline">The heart of the transformer. Each word asks a question, every word offers an
+        answer, and each word mixes in the answers that fit.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <p class="small" style="margin-top:0"><b>cat</b> asks: <i>“is any word describing me?”</i> Every
+          word says how well it matches:</p>
+          <div class="bars" style="max-width:440px">
+            <div class="barrow"><span class="blabel">the</span><div class="btrack"><div class="bfill" style="width:10%"></div></div><span class="bnum">10%</span></div>
+            <div class="barrow"><span class="blabel">black</span><div class="btrack"><div class="bfill" style="width:60%"></div></div><span class="bnum">60%</span></div>
+            <div class="barrow q"><span class="blabel">cat</span><div class="btrack"><div class="bfill" style="width:30%"></div></div><span class="bnum">30%</span></div>
+          </div>
+          <p class="small" style="margin-bottom:4px">So cat takes 10% of the's numbers, 60% of black's and 30%
+          of its own (vectors from box 2):</p>
+          <div class="addrows" id="mixrow"></div>
+          <p class="small" style="margin-bottom:0">That mix is mostly <b>colour</b>: “black” has flowed into
+          the cat's slot. Box 5 adds it onto the cat, and the cat's slot now means <b>black cat</b>.</p>
+        </div>
+        <div class="eg">
+          <div class="eglabel">the three names: query, key, value</div>
+          <div class="qkv">
+            <div class="qk"><b>Query · Q</b><span>what I'm looking for</span><span class="muted small">like what you type in a search bar</span><span class="mono">cat: “a word describing me”</span></div>
+            <div class="qk"><b>Key · K</b><span>what each word says it is</span><span class="muted small">like a video's title</span><span class="mono">black: “I describe things”</span></div>
+            <div class="qk"><b>Value · V</b><span>what each word hands over</span><span class="muted small">like the video itself</span><span class="mono">black: “the colour black”</span></div>
+          </div>
+          <p class="small">Match the query against every key → scores → softmax makes them percentages
+          (box 14) → mix the values by those percentages. Unlike a search engine you don't get one result:
+          you get a <b>blend</b>.</p>
+          <div class="formula">attention = softmax( Q · Kᵀ / √d ) · V</div>
+          <p class="small muted" style="margin-bottom:0">Q · K is a “dot product”: multiply pairwise and add.
+          It's big when two vectors point the same way. Lesson 2 does it by hand.</p>
+        </div>
+        <div class="eg play" id="play-enc">
+          <div class="eglabel">try it · click a word to make it ask</div>
+        </div>
+        <div class="eg">
+          <div class="eglabel">why “multi-head”</div>
+          <p class="small" style="margin-top:0">One look isn't enough. The box runs <b>8 lookups side by
+          side</b> (“heads”), each with its own Q, K and V, each hunting for something different. Like 8
+          friends reading the same sentence, each asked a different question. Made-up but typical heads
+          for <b>it</b>:</p>
+          <div class="heads" style="margin:12px 0">
+            <div>
+              <div class="small muted" style="margin-bottom:8px">head 1 · who am I?</div>
+              <div class="barrow"><span class="blabel">cat</span><div class="btrack"><div class="bfill" style="width:70%"></div></div><span class="bnum">70%</span></div>
+              <div class="barrow"><span class="blabel">black</span><div class="btrack"><div class="bfill" style="width:12%"></div></div><span class="bnum">12%</span></div>
+              <div class="barrow"><span class="blabel">the</span><div class="btrack"><div class="bfill" style="width:6%"></div></div><span class="bnum">6%</span></div>
+              <div class="barrow"><span class="blabel">other</span><div class="btrack"><div class="bfill" style="width:12%"></div></div><span class="bnum">12%</span></div>
+            </div>
+            <div>
+              <div class="small muted" style="margin-bottom:8px">head 2 · the word before me</div>
+              <div class="barrow"><span class="blabel">because</span><div class="btrack"><div class="bfill" style="width:65%"></div></div><span class="bnum">65%</span></div>
+              <div class="barrow"><span class="blabel">it</span><div class="btrack"><div class="bfill" style="width:20%"></div></div><span class="bnum">20%</span></div>
+              <div class="barrow"><span class="blabel">drank</span><div class="btrack"><div class="bfill" style="width:15%"></div></div><span class="bnum">15%</span></div>
+            </div>
+            <div>
+              <div class="small muted" style="margin-bottom:8px">head 3 · what's said about me</div>
+              <div class="barrow"><span class="blabel">thirsty</span><div class="btrack"><div class="bfill" style="width:55%"></div></div><span class="bnum">55%</span></div>
+              <div class="barrow"><span class="blabel">was</span><div class="btrack"><div class="bfill" style="width:25%"></div></div><span class="bnum">25%</span></div>
+              <div class="barrow"><span class="blabel">other</span><div class="btrack"><div class="bfill" style="width:20%"></div></div><span class="bnum">20%</span></div>
+            </div>
+          </div>
+          <p class="small muted" style="margin-bottom:0">The 8 results are glued back together into one vector.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          Model A has no left tower: the CNN eye does the reading. <b>Model B</b> (the reader) uses 2 layers
+          of exactly this box over the 576 patches, so every patch knows about the whole kolam
+          (<code>model.py:194</code>). Our heads: 8, each 32 numbers wide (256 ÷ 8).
+        </div>
+      </section>
+
+      <!-- ============================================================ 5 add & norm -->
+      <section class="card sec" id="s-addnorm">
+        <div class="sechead"><span class="stepno">5</span><span class="btag norm">Add &amp; Norm</span><span class="where">every yellow box</span></div>
+        <h2>Two safety rails after every box</h2>
+        <p class="oneline">After each orange or blue box comes a yellow one. <b>Add</b>: keep the original
+        and add the change. <b>Norm</b>: bring the numbers back to a steady size.</p>
+        <div class="eg">
+          <div class="eglabel">simple example · add (the shortcut)</div>
+          <div class="addrows" id="addrows"></div>
+          <p class="small">Still mostly “animal”, now with a strong “colour”. It's track-changes, not a
+          rewrite. Without the shortcut the cat's slot would be just <span class="mono">[.27, .57, .15]</span>,
+          more colour than animal: the cat starts to vanish.</p>
+          <p class="small muted" style="margin-bottom:0">In the picture it's the line that goes
+          <b>around</b> each box into the yellow one (lit green right now). It's called a <b>residual</b>
+          connection. It also lets the learning signal flow back through deep stacks.</p>
+        </div>
+        <div class="eg">
+          <div class="eglabel">simple example · norm (auto-volume)</div>
+          <p class="small" style="margin-top:0">Numbers can drift very loud or very quiet as they pass
+          through many boxes. <b>LayerNorm</b> rescales each vector to average 0 and spread 1: same shape,
+          steady size. Move the sliders:</p>
+          <div class="lnctl">
+            <label>volume <input type="range" id="ln-vol" min="-2" max="1.2" step="0.01" value="0"> <span id="ln-volv" class="mono"></span></label>
+            <label>shift <input type="range" id="ln-sh" min="-20" max="20" step="0.5" value="0"> <span id="ln-shv" class="mono"></span></label>
+          </div>
+          <div class="lncols">
+            <div><div class="small muted">going in</div><div id="ln-in"></div></div>
+            <div><div class="small muted">after LayerNorm</div><div id="ln-out"></div></div>
+          </div>
+          <p class="small muted" style="margin:12px 0 0">The input jumps around; the output doesn't move.
+          (LayerNorm also has two learned knobs, a scale and a shift, so the model can choose a different
+          steady size.)</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          Same two parts, slightly different order: we <b>Norm before</b> each box and <b>Add after</b> it
+          (<code>norm_first=True</code>, <code>model.py:106</code>), which trains more steadily, plus one last
+          Norm at the very top (<code>model.py:108</code>).
+        </div>
+      </section>
+
+      <!-- ============================================================ 6 feed forward -->
+      <section class="card sec" id="s-ff">
+        <div class="sechead"><span class="stepno">6</span><span class="btag ff">Feed Forward</span><span class="where">blue boxes, both towers</span></div>
+        <h2>Each word thinks on its own</h2>
+        <p class="oneline">Attention is a <b>meeting</b>: words share information. Feed Forward is the
+        <b>desk work</b> after it: every word goes through the same small network, alone.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <p class="small" style="margin-top:0">Think of the middle layer as a row of yes/no detectors
+          (names made up; real ones aren't labelled). The cat's vector goes in, each detector gives a
+          number, and <b>ReLU</b> keeps the positives and turns negatives into 0:</p>
+          <svg id="ffnet" viewBox="0 0 560 268" role="img" aria-label="three inputs, six detectors of which three fire, three outputs"></svg>
+          <p class="small" style="margin-bottom:0">Only the detectors that fire pass a message on; the
+          result is added back onto the word (Add &amp; Norm). Size in the paper: <b>512 → 2048 → 512</b>,
+          spread out 4× wider, then squeezed back. It's the biggest single part of each layer, and much of
+          what a model “knows” is stored here.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          <b>256 → 1024 → 256</b> (the <code>4 * d</code> in <code>model.py:106</code>). The same desk
+          routine for every token.
+        </div>
+      </section>
+
+      <!-- ============================================================ 7 N× -->
+      <section class="card sec" id="s-nx">
+        <div class="sechead"><span class="stepno">7</span><span class="btag">N×</span><span class="where">the grey frames</span></div>
+        <h2>Stack the same layer N times</h2>
+        <p class="oneline">Everything inside a grey frame is <b>one layer</b>. The model stacks N copies,
+        each with its own numbers. The output of one is the input of the next.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <p class="small" style="margin-top:0">Like reading a tricky sentence several times. What the
+          vector in the slot of <b>it</b> could mean after each layer of
+          <span class="mono">the black cat drank because it was thirsty</span>:</p>
+          <div class="stack">
+            <div class="lay top"><span class="k">after layer 3</span><span>“it” = the thirsty black cat</span><span class="rich"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></span></div>
+            <div class="upar">↑</div>
+            <div class="lay"><span class="k">after layer 2</span><span>“it” = the cat</span><span class="rich"><i class="f"></i><i class="f"></i><i class="f"></i><i></i></span></div>
+            <div class="upar">↑</div>
+            <div class="lay"><span class="k">after layer 1</span><span>“it” is in the “because …” part</span><span class="rich"><i class="f"></i><i class="f"></i><i></i><i></i></span></div>
+            <div class="upar">↑</div>
+            <div class="lay"><span class="k">start</span><span>“it” = some pronoun</span><span class="rich"><i class="f"></i><i></i><i></i><i></i></span></div>
+          </div>
+          <p class="small" style="margin-bottom:0">The paper stacks <b>6</b>. GPT-3 stacks 96. Same layer,
+          different height. At the top of the left tower you get one rich vector per input word, and those
+          cross the bridge to the writer (box 11).</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          The writer has <b>4</b> layers (<code>layers=4</code>, <code>model.py:96</code>). Model B's reader
+          has 2.
+        </div>
+      </section>
+
+      <!-- ============================================================ 8 outputs (shifted right) -->
+      <section class="card sec" id="s-outputs">
+        <div class="sechead"><span class="stepno">8</span><span class="btag">Outputs (shifted right)</span><span class="where">bottom of the right tower</span></div>
+        <h2>The writer reads its own answer so far</h2>
+        <p class="oneline">The right tower's input is the answer written so far, <b>pushed one place to
+        the right</b>, with a <span class="mono">&lt;start&gt;</span> token in front.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <svg id="shiftfig" viewBox="0 0 470 142" role="img" aria-label="four slots: each sees the words before its target"></svg>
+          <p class="small" style="margin-bottom:0">Each slot sees the words <i>before</i> its target and must
+          guess the target. In <b>training</b> we already know the whole answer, so all four slots run at
+          once (box 10 keeps that fair). When translating something <b>new</b>, we don't know the answer:
+          write one word, feed it back in, repeat (box 15).</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          Target <span class="mono">0 0 | 6 1 0 | …</span>, input <span class="mono">&lt;bos&gt; 0 0 | 6 1 …</span>.
+          Literally the targets shifted right: <code>torch.cat([BOS, tgt[:, :-1]])</code>,
+          <code>model.py:126</code>. (The code calls the start token <span class="mono">&lt;bos&gt;</span>,
+          “beginning of sequence”.)
+        </div>
+      </section>
+
+      <!-- ============================================================ 9 output embedding -->
+      <section class="card sec" id="s-outemb">
+        <div class="sechead"><span class="stepno">9</span><span class="btag emb">Output Embedding</span><span class="where">right tower · pink, and its ⊕</span></div>
+        <h2>Same two steps on the writing side</h2>
+        <p class="oneline">Each written token → its vector from a second table (for the output language)
+        → plus its position stamp. Boxes 2 and 3 again.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <p class="small" style="margin:0">The French table has a row for <span class="mono">le</span>,
+          <span class="mono">chat</span>, <span class="mono">noir</span>, <span class="mono">&lt;start&gt;</span>,
+          <span class="mono">&lt;end&gt;</span> and every other French token. Slot 3 gets the vector of
+          “chat” plus the stamp for position 3.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          Our table has just <b>13 rows</b>: <span class="mono">0–8, |, &lt;end&gt;, &lt;bos&gt;, &lt;pad&gt;</span>,
+          each 256 numbers (<code>self.tok</code>, <code>model.py:103</code>). And the stamp isn't “slot #7”
+          but <b>which gap of the encoding</b> the slot writes: its row and column, counted from the
+          <span class="mono">|</span> tokens so far (<code>token_slots</code>, <code>model.py:85</code>).
+          The first slots of the Lesson 1 kolam:
+          <div class="slotswrap"><div class="slots" id="slots"></div></div>
+          <p class="small muted" style="margin:4px 0 0">row = how many <span class="mono">|</span> so far;
+          column = tokens since the last <span class="mono">|</span>. Counting from 0, like the code.</p>
+        </div>
+      </section>
+
+      <!-- ============================================================ 10 masked attention -->
+      <section class="card sec" id="s-masked">
+        <div class="sechead"><span class="stepno">10</span><span class="btag attn">Masked Multi-Head Attention</span><span class="where">right tower · first orange box</span></div>
+        <h2>Same attention, but no peeking ahead</h2>
+        <p class="oneline">The writer's first box is box 4 again, with one rule: a word may look only at
+        <b>itself and the words before it</b>.</p>
+        <div class="eg">
+          <div class="eglabel">simple example</div>
+          <div class="small muted" style="margin-bottom:6px">rows = the slot asking · ✓ = may look at</div>
+          <div class="maskmini" id="maskmini"></div>
+          <p class="small">Why: in training the whole answer sits in the input (box 8). Without the mask,
+          the slot that must write <b>noir</b> could look one step ahead, see “noir” and copy it, learning
+          nothing. With the mask it only sees <span class="mono">&lt;start&gt; le chat</span>: a fair test.
+          Every slot is a fair test, so one pass trains all of them at once.</p>
+          <p class="small muted" style="margin-bottom:0">How it blocks: forbidden scores are set to
+          <b>−∞</b> before softmax, and softmax turns −∞ into exactly 0% (try it in box 14).</p>
+        </div>
+        <div class="eg play" id="play-dec">
+          <div class="eglabel">try it · the same sentence as box 4, now with the mask</div>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          One line: <code>torch.triu(torch.full((L, L), float("-inf")), 1)</code>, −∞ above the diagonal
+          (<code>model.py:121</code>). GPT uses exactly this mask.
+        </div>
+      </section>
+
+      <!-- ============================================================ 11 cross-attention -->
+      <section class="card sec" id="s-cross">
+        <div class="sechead"><span class="stepno">11</span><span class="btag attn">Multi-Head Attention</span><span class="where">right tower · the bridge</span></div>
+        <h2>The writer looks across at the reader</h2>
+        <p class="oneline">The writer's second orange box. Same maths again, but the question (<b>Q</b>)
+        comes from the writer, and the keys and values (<b>K, V</b>) come from the top of the left tower:
+        the two arrows crossing over.</p>
+        <div class="eg">
+          <div class="eglabel">simple example · click a French word</div>
+          <svg id="align" viewBox="0 0 440 168" role="img" aria-label="which English word each French word looks at"></svg>
+          <p class="small" id="aligncap" style="margin:8px 0 0"></p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          Q comes from the token being written (“I'm row 1, column 0”), K and V from the <b>576 image
+          patches</b> (<code>memory()</code> goes in as <code>mem</code>: <code>self.dec(x, mem, …)</code>,
+          <code>model.py:122</code>). So while writing a gap's digit, it should learn to look <b>where that gap
+          is drawn</b>. Pick a token:
+          <div class="xwrap">
+            <div class="frame">
+              <img src="assets/lesson-1.png" alt="the lesson 1 kolam">
+              <svg id="xheat" viewBox="0 0 512 512" aria-hidden="true"></svg>
+            </div>
+            <div class="xside">
+              <div class="xpick" id="xpick"></div>
+              <p class="small" id="xcap" style="margin:0"></p>
+              <p class="small muted" style="margin:10px 0 0">A drawing of what training should teach it, not a
+              real attention map yet.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ 12 rest of the writer -->
+      <section class="card sec" id="s-decrest">
+        <div class="sechead"><span class="stepno">12</span><span class="btag norm">Add &amp; Norm</span><span class="btag ff">Feed Forward</span><span class="btag">N×</span><span class="where">the rest of the right tower</span></div>
+        <h2>The rest of the writer: you know it already</h2>
+        <p class="oneline">Add &amp; Norm after every box (box 5), one Feed Forward (box 6), and the whole
+        layer stacked N times (box 7).</p>
+        <div class="eg">
+          <div class="eglabel">one writer layer, as a recipe</div>
+          <ol class="recipe">
+            <li><b>look back</b> at the words written so far (masked attention) → Add &amp; Norm</li>
+            <li><b>look across</b> at the reader (cross-attention) → Add &amp; Norm</li>
+            <li><b>think alone</b> (feed forward) → Add &amp; Norm</li>
+          </ol>
+          <p class="small muted" style="margin-bottom:0">Repeat N = 6 times in the paper.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          <code>nn.TransformerDecoderLayer(d, heads, 4 * d, 0.1, …, norm_first=True)</code> with d = 256 and
+          8 heads, stacked 4 times (<code>model.py:106–107</code>). The 0.1 is dropout: while training,
+          randomly zero 10% of the numbers so the model can't lean on any single one.
+        </div>
+      </section>
+
+      <!-- ============================================================ 13 linear -->
+      <section class="card sec" id="s-linear">
+        <div class="sechead"><span class="stepno">13</span><span class="btag lin">Linear</span><span class="where">top · purple</span></div>
+        <h2>One score for every word in the vocabulary</h2>
+        <p class="oneline">The writer's final vector is compared with a pattern for <b>every word in the
+        vocabulary</b>. Each comparison gives a score, called a <b>logit</b>. High score = likely next
+        word.</p>
+        <div class="eg">
+          <div class="eglabel">simple example · slot 3, which has seen “&lt;start&gt; le chat”</div>
+          <div class="small" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">final vector
+            <span class="vec" data-vec="70,20,90,35,60,10,80,45"></span> → compare with each word's pattern →</div>
+          <div id="linbars" style="max-width:480px; margin-top:6px"></div>
+          <p class="small" style="margin-bottom:0">Scores can be any number, even negative. They're not
+          percentages yet. It's the same “how well do we match” idea as attention's Q · K, but against every
+          word at once. The paper: 512 numbers → about 37,000 scores.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          256 numbers → <b>11 scores</b>, one each for <span class="mono">0–8, |, &lt;end&gt;</span>:
+          <code>self.out = nn.Linear(d, len(VOCAB))</code>, <code>model.py:109</code>.
+        </div>
+      </section>
+
+      <!-- ============================================================ 14 softmax -->
+      <section class="card sec" id="s-softmax">
+        <div class="sechead"><span class="stepno">14</span><span class="btag soft">Softmax</span><span class="where">top · green</span></div>
+        <h2>Turn scores into percentages</h2>
+        <p class="oneline">Softmax makes every score positive (eˣ) and divides by the total, so they add up
+        to <b>100%</b>. Bigger score → bigger share, and the order never changes.</p>
+        <div class="eg">
+          <div class="eglabel">simple example · drag the scores</div>
+          <div id="smx"></div>
+          <div class="smsum" id="smsum"></div>
+          <button id="mask-chat"></button>
+          <p class="small muted" style="margin:12px 0 0">The same softmax sits inside every orange box,
+          turning match scores into mixing percentages. And a score of −∞ gives exactly 0%: that's how the
+          mask of box 10 blocks.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          In training, softmax hides inside the loss (<code>F.cross_entropy</code>, <code>model.py:129</code>).
+          When reading an image the code skips it: the biggest score always gets the biggest share, so it just
+          takes the biggest <i>allowed</i> score (<code>argmax</code>, <code>model.py:149</code>). Tokens that
+          aren't allowed get −∞ first, the same trick as the mask.
+        </div>
+      </section>
+
+      <!-- ============================================================ 15 output probabilities -->
+      <section class="card sec" id="s-probs">
+        <div class="sechead"><span class="stepno">15</span><span class="btag">Output Probabilities</span><span class="where">the very top</span></div>
+        <h2>Pick a word, feed it back, repeat</h2>
+        <p class="oneline">Take the most likely word, add it to the answer, and send it back in at the
+        bottom right (box 8). Repeat until <span class="mono">&lt;end&gt;</span>. That's the dashed loop in
+        the picture.</p>
+        <div class="eg">
+          <div class="eglabel">simple example · press next</div>
+          <div class="strip pstrip" id="pstrip"></div>
+          <div class="bars" id="pbars" style="max-width:440px"></div>
+          <div class="pcap" id="pcap"></div>
+          <div class="controls">
+            <button class="primary" id="pnext">next word ▸</button>
+            <button id="preset">↺ reset</button>
+          </div>
+        </div>
+        <div class="eg">
+          <div class="eglabel">how it learns</div>
+          <p class="small" style="margin:0">Training scores the model by how <b>surprised</b> it was by the
+          right word: <span class="mono">loss = −log(p)</span>. It gave “noir” 81% → loss 0.21, small. Had
+          it given 5% → loss 3.0, big. Training nudges every number in every box a little to make the loss
+          smaller, over millions of examples. Nobody programs grammar in; it falls out of this game.</p>
+        </div>
+        <div class="ours">
+          <span class="ourslabel">in our kolam model</span>
+          <code>predict()</code>, <code>model.py:131</code>: start with <span class="mono">&lt;bos&gt;</span>,
+          run, take the best <b>allowed</b> token (<code>allowed_next</code> blocks impossible ones, like a
+          wrong row length), append, stop at <span class="mono">&lt;end&gt;</span>.
+          <a href="lesson-1.html">Lesson 1</a> replays this on a real kolam.
+        </div>
+      </section>
+
+      <!-- ============================================================ our model -->
+      <section class="card sec" id="s-ours">
+        <div class="sechead"><span class="btag" style="--bc:#a8dbb6">our model</span><span class="where">same picture, new labels</span></div>
+        <h2>Our kolam model on the same picture</h2>
+        <p class="oneline">Every box keeps its job. Only the labels change.</p>
+        <button id="ours-btn" class="primary"></button>
+        <div class="tabwrap">
+          <table class="maptab">
+            <tr><th>box</th><th>2017 paper (translation)</th><th>our Model A (kolam → encoding)</th></tr>
+            <tr><td>Inputs</td><td>English words</td><td>a kolam image, 384 × 384</td></tr>
+            <tr><td>Input Embedding</td><td>a word table, 512 wide</td><td>CNN eye (ResNet-18) → 576 patch vectors, 256 wide</td></tr>
+            <tr><td>⊕ left</td><td>clock hands, by word position</td><td>clock hands for patch row and column</td></tr>
+            <tr><td>left tower layers</td><td>6</td><td>none (Model B has 2)</td></tr>
+            <tr><td>Outputs (shifted right)</td><td>&lt;start&gt; + French so far</td><td>&lt;bos&gt; + digits so far</td></tr>
+            <tr><td>Output Embedding</td><td>a French word table</td><td>a 13-row table</td></tr>
+            <tr><td>⊕ right</td><td>clock hands, by word position</td><td>learned: the gap's row and column</td></tr>
+            <tr><td>Masked Multi-Head Attention</td><td>8 heads</td><td>8 heads of 32 numbers</td></tr>
+            <tr><td>Multi-Head Attention (bridge)</td><td>looks at the English</td><td>looks at the image patches</td></tr>
+            <tr><td>Feed Forward</td><td>512 → 2048 → 512</td><td>256 → 1024 → 256</td></tr>
+            <tr><td>N× (right tower)</td><td>6</td><td>4</td></tr>
+            <tr><td>Linear → Softmax</td><td>~37,000 tokens</td><td>11 tokens</td></tr>
+          </table>
+        </div>
+        <h3 style="margin-top:22px">Which part of the picture the famous models keep</h3>
+        <div class="thumbs">
+          <div class="thumb"><svg id="th-enc" class="tfsvg" role="img" aria-label="left tower only"></svg>
+            <p><b>Left tower only.</b> BERT, image models (ViT), our <b>Model B</b>. Reads, doesn't write.</p></div>
+          <div class="thumb"><svg id="th-dec" class="tfsvg" role="img" aria-label="right tower only, without the bridge"></svg>
+            <p><b>Right tower only, no bridge.</b> GPT and most chat models. Writes, never looks ahead.</p></div>
+          <div class="thumb"><svg id="th-both" class="tfsvg" role="img" aria-label="both towers"></svg>
+            <p><b>Both.</b> The 2017 translator, image captioners, and our <b>Model A</b>, with its left tower
+            swapped for the CNN eye.</p></div>
+        </div>
+      </section>
+
+      <!-- ============================================================ words -->
+      <section class="card sec" id="s-words">
+        <h2>Now you know the words</h2>
+        <dl class="glossary" style="margin:14px 0 22px">
+          <dt>token</dt><dd>one piece of input: a word, a word-piece, an image patch, or for us a digit like “6” or “|”.</dd>
+          <dt>vocabulary</dt><dd>the fixed list of every token the model knows: ~37,000 in the paper, 11 in ours.</dd>
+          <dt>vector · embedding</dt><dd>a list of numbers; the embedding is the vector a token gets from the table.</dd>
+          <dt>positional encoding</dt><dd>the “where am I” stamp added to each vector (the ⊕).</dd>
+          <dt>attention</dt><dd>each token searching the others and mixing in what it finds.</dd>
+          <dt>query · key · value</dt><dd>what I'm looking for · what I say I am · what I hand over.</dd>
+          <dt>head</dt><dd>one of several attentions running side by side, each with its own Q, K, V.</dd>
+          <dt>self / cross</dt><dd>attention within one list · the writer looking across at the reader (or the image).</dd>
+          <dt>mask</dt><dd>blocks a token from seeing later tokens: their scores become −∞, so 0%.</dd>
+          <dt>residual · Add</dt><dd>keep the original vector and add the box's change to it.</dd>
+          <dt>LayerNorm · Norm</dt><dd>rescale each vector to a steady size.</dd>
+          <dt>feed forward</dt><dd>a small network every token runs through alone: wide, ReLU, narrow.</dd>
+          <dt>layer · N×</dt><dd>one full block of boxes; the model stacks N of them.</dd>
+          <dt>encoder · decoder</dt><dd>the reader tower · the writer tower.</dd>
+          <dt>logits</dt><dd>the raw scores from Linear, one per token (11 per step in ours).</dd>
+          <dt>softmax</dt><dd>turns scores into percentages that add up to 100%.</dd>
+          <dt>teacher forcing</dt><dd>training the writer on the true answer shifted right, every slot at once.</dd>
+          <dt>cross-entropy</dt><dd>the loss: how surprised the model was by the right token, −log(p).</dd>
+        </dl>
+        <p style="margin-bottom:0"><a href="lesson-1.html"><b>→ Lesson 1: The loop</b></a>
+        <span class="muted">· watch Model A write a real kolam, token by token. Whenever a box above felt
+        thin, ask in the chat.</span></p>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="end">
+    <a href="index.html">← all lessons</a> · written version: <code>docs/model_experiments.md</code> §3–4 ·
+    the picture is redrawn from Vaswani et al., <i>Attention Is All You Need</i> (2017), Figure 1
+  </footer>
+
+</div>
+
+<script src="assets/lesson-1.js"></script>
+<script>
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const pct = x => Math.round(x * 100) + "%";
+  const minus = s => String(s).replace(/-/g, "−");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const DCOL = d => d === 0 ? "#8a93a6" : d === 1 ? "#ec6250" : d === 2 ? "#4a9ee8" : "#56c478";
+
+  /* =================================================================== the picture */
+  const COL = {emb: "#f0c2c2", attn: "#f5cb98", norm: "#eaedb0", ff: "#bcdff0", lin: "#d3cff0", soft: "#c3e4c2"};
+
+  // id, x, y, w, h, colour, keys, paper label, our label (null = same as the paper)
+  const BOX = [
+    ["softmax", 295, 44, 150, 28, "soft", "top", ["Softmax"], null],
+    ["linear", 295, 88, 150, 32, "lin", "top", ["Linear"], ["Linear", "256 → 11 scores"]],
+    ["dAN3", 295, 154, 150, 24, "norm", "dec norm decrest", ["Add & Norm"], null],
+    ["dFF", 295, 194, 150, 34, "ff", "dec ff decrest", ["Feed Forward"], ["Feed Forward", "256 → 1024 → 256"]],
+    ["dAN2", 295, 250, 150, 24, "norm", "dec norm decrest xsub", ["Add & Norm"], null],
+    ["dMHA", 295, 294, 150, 42, "attn", "dec attn xattn xsub", ["Multi-Head", "Attention"], ["Cross-Attention", "looks at the image"]],
+    ["dAN1", 295, 384, 150, 24, "norm", "dec norm decrest", ["Add & Norm"], null],
+    ["dMMHA", 295, 428, 150, 42, "attn", "dec attn", ["Masked", "Multi-Head Attention"], ["Masked Self-Attention", "8 heads × 32"]],
+    ["dEmb", 295, 578, 150, 34, "emb", "dec", ["Output Embedding"], ["Token Embedding", "13 × 256 table"]],
+    ["eAN2", 55, 282, 150, 24, "norm", "enc encL norm", ["Add & Norm"], null],
+    ["eFF", 55, 322, 150, 34, "ff", "enc encL ff", ["Feed Forward"], null],
+    ["eAN1", 55, 384, 150, 24, "norm", "enc encL norm", ["Add & Norm"], null],
+    ["eMHA", 55, 428, 150, 42, "attn", "enc encL attn", ["Multi-Head", "Attention"], null],
+    ["eEmb", 55, 578, 150, 34, "emb", "enc", ["Input Embedding"], ["CNN eye · ResNet-18", "576 patch vectors"]],
+  ];
+  const SEC_OF = {
+    softmax: "s-softmax", linear: "s-linear", dFF: "s-ff", eFF: "s-ff", dMHA: "s-cross", dMMHA: "s-masked",
+    dEmb: "s-outemb", eMHA: "s-mha", eEmb: "s-inemb",
+    dAN1: "s-addnorm", dAN2: "s-addnorm", dAN3: "s-addnorm", eAN1: "s-addnorm", eAN2: "s-addnorm",
+  };
+  // points, keys, arrowhead?, class
+  const LINES = [
+    // left tower
+    [[[130, 636], [130, 612]], "enc", 1],
+    [[[130, 578], [130, 556]], "enc", 1],
+    [[[130, 536], [130, 494]], "enc encL", 0],
+    [[[130, 494], [95, 494], [95, 470]], "enc encL", 1],
+    [[[130, 494], [130, 470]], "enc encL", 1],
+    [[[130, 494], [165, 494], [165, 470]], "enc encL", 1],
+    [[[130, 494], [44, 494], [44, 396], [55, 396]], "enc encL res", 1, "res"],
+    [[[130, 428], [130, 408]], "enc encL", 1],
+    [[[130, 384], [130, 356]], "enc encL", 1],
+    [[[130, 370], [44, 370], [44, 294], [55, 294]], "enc encL res", 1, "res"],
+    [[[130, 322], [130, 306]], "enc encL", 1],
+    // the bridge: top of the left tower -> keys and values of the writer's middle attention
+    [[[130, 282], [130, 256], [282, 256], [282, 360], [352, 360]], "bridge xattn", 0, "bridge"],
+    [[[325, 360], [325, 336]], "bridge xattn", 1, "bridge"],
+    [[[352, 360], [352, 336]], "bridge xattn", 1, "bridge"],
+    // right tower
+    [[[370, 630], [370, 612]], "dec", 1],
+    [[[370, 578], [370, 556]], "dec", 1],
+    [[[370, 536], [370, 494]], "dec", 0],
+    [[[370, 494], [335, 494], [335, 470]], "dec", 1],
+    [[[370, 494], [370, 470]], "dec", 1],
+    [[[370, 494], [405, 494], [405, 470]], "dec", 1],
+    [[[370, 494], [456, 494], [456, 396], [445, 396]], "dec res decrest", 1, "res"],
+    [[[370, 428], [370, 408]], "dec", 1],
+    [[[370, 384], [370, 372], [410, 372], [410, 336]], "dec xsub", 1],
+    [[[410, 372], [456, 372], [456, 262], [445, 262]], "dec res decrest xsub", 1, "res"],
+    [[[370, 294], [370, 274]], "dec xsub", 1],
+    [[[370, 250], [370, 228]], "dec", 1],
+    [[[370, 240], [456, 240], [456, 166], [445, 166]], "dec res decrest", 1, "res"],
+    [[[370, 194], [370, 178]], "dec", 1],
+    [[[370, 154], [370, 120]], "dec top", 1],
+    [[[370, 88], [370, 72]], "top", 1],
+    [[[370, 44], [370, 30]], "top", 1],
+    // the loop of box 15: the picked word goes back in at the bottom right
+    [[[442, 19], [508, 19], [508, 650], [446, 650]], "loop", 1, "loop"],
+  ];
+
+  function mk(tag, attrs, parent) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function label(parent, x, y, lines, cls, anchor, gap) {
+    lines.forEach((s, i) => {
+      const t = mk("text", {x, y: y + i * (gap || 13.5), "text-anchor": anchor || "middle", class: cls}, parent);
+      t.textContent = s;
+    });
+  }
+  function line(parent, pts, keys, head, cls) {
+    const g = mk("g", {class: "ln" + (cls ? " " + cls : "")}, parent);
+    if (keys) g.setAttribute("data-k", keys);
+    mk("path", {d: "M" + pts.map(p => p.join(",")).join(" L")}, g);
+    if (head) {
+      const [x1, y1] = pts[pts.length - 2], [x2, y2] = pts[pts.length - 1];
+      const dx = Math.sign(x2 - x1), dy = Math.sign(y2 - y1);
+      const bx = x2 - dx * 7, by = y2 - dy * 7, px = -dy * 3.6, py = dx * 3.6;
+      mk("path", {class: "hd", d: `M${x2},${y2} L${bx + px},${by + py} L${bx - px},${by - py} Z`}, g);
+    }
+    return g;
+  }
+
+  function drawTF(svg, o) {
+    const ours = o.mode === "ours";
+    svg.textContent = "";
+    svg.setAttribute("viewBox", "0 0 520 668");
+
+    for (const [keys, x, y, w, h] of [["eFrame frame enc", 30, 268, 200, 250], ["dFrame frame dec decrest", 270, 140, 200, 378]]) {
+      const g = mk("g", {class: "frameg", "data-k": keys, "data-sec": "s-nx"}, svg);
+      mk("rect", {x, y, width: w, height: h, rx: 14, class: "fr"}, g);
+    }
+    for (const [pts, keys, head, cls] of LINES) line(svg, pts, keys, head, cls);
+
+    for (const [id, x, y, w, h, c, keys, P, O] of BOX) {
+      const g = mk("g", {class: "blk", "data-k": id + " " + keys, "data-sec": SEC_OF[id]}, svg);
+      mk("rect", {x, y, width: w, height: h, rx: 6, fill: COL[c]}, g);
+      const L = ours && O ? O : P;
+      if (L.length === 1) label(g, x + w / 2, y + h / 2 + 4.5, L, "bt");
+      else {
+        label(g, x + w / 2, y + h / 2 - 2, [L[0]], "bt");
+        label(g, x + w / 2, y + h / 2 + 11, [L[1]], ours && O ? "bs" : "bt");
+      }
+    }
+
+    // the two ⊕ positional encodings: plus-circle, wave-circle, label
+    const pe = (id, cx, wx, lx, anchor, L) => {
+      const g = mk("g", {class: "blk pe", "data-k": `${id} pe ${id === "ePE" ? "enc" : "dec"}`, "data-sec": "s-pos"}, svg);
+      const left = Math.min(cx, wx), right = Math.max(cx, wx);
+      mk("line", {x1: left + (left === cx ? 10 : 8), y1: 546, x2: right - (right === cx ? 10 : 8), y2: 546, class: "pecon"}, g);
+      mk("circle", {cx, cy: 546, r: 10, class: "plus"}, g);
+      mk("path", {d: `M${cx - 6},546 H${cx + 6} M${cx},540 V552`, class: "plusx"}, g);
+      mk("circle", {cx: wx, cy: 546, r: 8, class: "wave"}, g);
+      mk("path", {d: `M${wx - 5.5},546 C${wx - 4},540 ${wx - 1.5},540 ${wx},546 S${wx + 4},552 ${wx + 5.5},546`, class: "wavep"}, g);
+      label(g, lx, 543, L, "lbl sm", anchor, 13);
+    };
+    pe("ePE", 130, 100, 88, "end", ours ? ["2D sine:", "patch row, col"] : ["Positional", "Encoding"]);
+    pe("dPE", 370, 400, 414, "start", ours ? ["learned:", "gap row, col"] : ["Positional", "Encoding"]);
+
+    const tl = (keys, sec, x, y, L, cls) => {
+      const g = mk("g", {class: "blk tl", "data-k": keys, "data-sec": sec}, svg);
+      label(g, x, y, L, cls);
+    };
+    tl("inputs enc", "s-inputs", 130, ours ? 648 : 652, ours ? ["kolam image", "384 × 384"] : ["Inputs"], "lbl");
+    tl("outputs dec", "s-outputs", 370, 644, ours ? ["<bos> + tokens", "written so far"] : ["Outputs", "(shifted right)"], "lbl");
+    tl("probs top", "s-probs", 370, 22, ours ? ["next token: 0–8, |, <end>"] : ["Output Probabilities"], "lbl");
+    tl("eNx nx enc encL", "s-nx", 15, 399, ["N×"], "nxl");
+    tl("dNx nx dec decrest", "s-nx", 490, 334, [ours ? "4×" : "N×"], "nxl");
+
+    if (ours) {
+      const g = mk("g", {class: "oursnote"}, svg);
+      line(g, [[130, 536], [130, 282]], "", 0, "pass");
+      mk("rect", {x: 42, y: 340, width: 176, height: 78, rx: 9, class: "note"}, g);
+      label(g, 130, 360, ["Model A has no layers here:", "the CNN's 576 patch vectors", "(+ their 2D positions) go", "straight up and over the bridge"], "lbl sm", "middle", 14.5);
+    }
+
+    const fade = (o.fade || []).concat(ours ? ["encL"] : []);
+    for (const e of svg.querySelectorAll("[data-k]")) {
+      const ks = e.getAttribute("data-k").split(" ");
+      if (fade.some(k => ks.includes(k))) e.classList.add("gone");
+    }
+
+    if (o.interactive) {
+      for (const g of svg.querySelectorAll("[data-sec]")) {
+        const t = mk("title", {});
+        t.textContent = `${SECT[g.dataset.sec].tag}: ${SECT[g.dataset.sec].say} (click to read)`;
+        g.prepend(t);
+        g.addEventListener("click", () => go(g.dataset.sec));
+      }
+    }
+  }
+
+  /* =================================================================== the walk */
+  const SECT = {
+    "s-intro": {n: "", tag: "the whole picture", say: "click any box to jump to it", keys: []},
+    "s-inputs": {n: 1, tag: "Inputs", say: "chop the input into tokens", keys: ["inputs"]},
+    "s-inemb": {n: 2, tag: "Input Embedding", say: "each token becomes a list of numbers", keys: ["eEmb"]},
+    "s-pos": {n: 3, tag: "Positional Encoding", say: "add a “where am I” stamp", keys: ["pe"]},
+    "s-mha": {n: 4, tag: "Multi-Head Attention", say: "every word looks at every word", keys: ["eMHA"]},
+    "s-addnorm": {n: 5, tag: "Add & Norm", say: "keep the original, steady the numbers", keys: ["norm", "res"]},
+    "s-ff": {n: 6, tag: "Feed Forward", say: "each word thinks alone", keys: ["ff"]},
+    "s-nx": {n: 7, tag: "N×", say: "stack the same layer N times", keys: ["frame", "nx"]},
+    "s-outputs": {n: 8, tag: "Outputs (shifted right)", say: "the answer so far, shifted right", keys: ["outputs"]},
+    "s-outemb": {n: 9, tag: "Output Embedding", say: "the same two steps for the writer", keys: ["dEmb", "dPE"]},
+    "s-masked": {n: 10, tag: "Masked Multi-Head Attention", say: "look back only, no peeking", keys: ["dMMHA"]},
+    "s-cross": {n: 11, tag: "Multi-Head Attention", say: "the writer looks across at the reader", keys: ["xattn"]},
+    "s-decrest": {n: 12, tag: "the rest of the writer", say: "Add & Norm, Feed Forward, N×", keys: ["decrest"]},
+    "s-linear": {n: 13, tag: "Linear", say: "one score per vocabulary word", keys: ["linear"]},
+    "s-softmax": {n: 14, tag: "Softmax", say: "scores become percentages", keys: ["softmax"]},
+    "s-probs": {n: 15, tag: "Output Probabilities", say: "pick a word, feed it back, repeat", keys: ["probs", "loop"]},
+    "s-ours": {n: "", tag: "our model", say: "the same picture with our labels", keys: []},
+    "s-words": {n: "", tag: "words", say: "the words you now know", keys: []},
+  };
+
+  const tf = $("tf");
+  let mode = "paper", focusKeys = [], active = null, lockUntil = 0;
+
+  function setFocus(keys) {
+    focusKeys = keys;
+    tf.classList.toggle("focus", keys.length > 0);
+    for (const e of tf.querySelectorAll("[data-k]")) {
+      const ks = e.getAttribute("data-k").split(" ");
+      e.classList.toggle("on", keys.some(k => ks.includes(k)));
+    }
+  }
+  function activate(id) {
+    if (id === active) return;
+    active = id;
+    const S = SECT[id];
+    setFocus(S.keys);
+    $("mapnow").innerHTML = S.n
+      ? `<b>${S.n} · ${esc(S.tag)}</b> <span class="muted">· ${esc(S.say)}</span>`
+      : `<span class="muted">${esc(S.say)}</span>`;
+  }
+  const secs = [...document.querySelectorAll("section.sec")];
+  function spy() {
+    if (performance.now() < lockUntil) return;
+    const y = innerHeight * 0.36;
+    let cur = secs[0];
+    for (const s of secs) if (s.getBoundingClientRect().top <= y) cur = s;
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) cur = secs[secs.length - 1];
+    activate(cur.id);
+  }
+  function go(id) {
+    const s = $(id);
+    if (!s) return;
+    lockUntil = performance.now() + 1200;
+    activate(id);
+    s.scrollIntoView({behavior: reduce ? "auto" : "smooth", block: "start"});
+  }
+  let ticking = false;
+  addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => { ticking = false; spy(); });
+  }, {passive: true});
+  addEventListener("resize", spy);
+
+  function setMode(m) {
+    mode = m;
+    drawTF(tf, {mode, interactive: true});
+    setFocus(focusKeys);
+    for (const b of document.querySelectorAll("[data-mode]")) b.classList.toggle("on", b.dataset.mode === m);
+    $("ours-btn").textContent = m === "ours" ? "back to the 2017 labels" : "show our Model A on the picture";
+  }
+  for (const b of document.querySelectorAll("[data-mode]")) b.addEventListener("click", () => setMode(b.dataset.mode));
+  $("ours-btn").addEventListener("click", () => setMode(mode === "ours" ? "paper" : "ours"));
+
+  setMode("paper");
+  drawTF($("th-enc"), {mode: "paper", fade: ["dec", "top", "bridge"]});
+  drawTF($("th-dec"), {mode: "paper", fade: ["enc", "bridge", "xsub"]});
+  drawTF($("th-both"), {mode: "paper"});
+  spy();
+
+  /* =================================================================== small helpers */
+  // a pretend 3-number vector: animal? colour? small word?
+  const fv = n => n === 0 ? "0" : (n < 1 ? n.toFixed(2).replace(/^0/, "") : n.toFixed(2)).replace(/0$/, "");
+  function v3(arr, name, cls) {
+    const bars = arr.map(v => `<span class="v3c"><span class="v3b" style="height:${Math.min(100, v / 1.2 * 100).toFixed(0)}%"></span></span>`).join("");
+    return `<span class="v3 ${cls || ""}">${name ? `<span class="v3name">${name}</span>` : ""}<span class="v3bars">${bars}</span><span class="v3n">[${arr.map(fv).join(", ")}]</span></span>`;
+  }
+  // a bar growing left (blue, negative) or right (amber, positive) from the middle
+  function sbar(v, scale) {
+    const f = Math.max(-1, Math.min(1, v / scale)), w = Math.abs(f) * 50;
+    return `<div class="strack"><div class="sfill${f < 0 ? " neg" : ""}" style="left:${f >= 0 ? 50 : 50 - w}%;width:${w}%"></div></div>`;
+  }
+  const fnum = v => minus(Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
+  function slotStamps(ids) {          // token_slots() in model.py: row = "|" so far, column = tokens since the last "|"
+    let row = 0, last = 0;
+    return ids.map((t, i) => {
+      if (t === "|") { row++; last = i; }
+      return [row, i - last];
+    });
+  }
+
+  for (const held of document.querySelectorAll(".vec[data-vec]")) {
+    held.innerHTML = held.dataset.vec.split(",").map(Number)
+      .map(v => `<span class="vm" style="background:rgba(232,185,106,${(0.15 + 0.85 * v / 100).toFixed(2)})"></span>`).join("");
+  }
+
+  /* =================================================================== 1 patches */
+  (function () {
+    const n = 24, step = 512 / n;
+    let h = "";
+    for (let i = 1; i < n; i++) {
+      const p = (i * step).toFixed(2);
+      h += `<line x1="${p}" y1="0" x2="${p}" y2="512"/><line x1="0" y1="${p}" x2="512" y2="${p}"/>`;
+    }
+    $("patchgrid").innerHTML = `<g stroke="rgba(238,233,221,.16)" stroke-width="1">${h}</g>` +
+      `<rect x="${13 * step}" y="${8 * step}" width="${step}" height="${step}" fill="rgba(232,185,106,.35)" stroke="#e8b96a" stroke-width="2.5"/>`;
+  })();
+
+  /* =================================================================== 2 embedding */
+  const EMB = [["the", [0, 0, .9]], ["black", [0, .9, .1]], ["white", [.1, .8, .1]], ["cat", [.9, .1, 0]], ["dog", [.8, .2, 0]]];
+  $("embtab").innerHTML = EMB.map(([w, v]) => `<div class="embrow"><span class="chip">${w}</span>${v3(v)}</div>`).join("");
+  (function () {
+    const X = v => 58 + v * 165, Y = v => 166 - v * 140;
+    const LAB = {the: [9, 4, "start"], black: [9, 4, "start"], white: [9, 9, "start"], cat: [9, 9, "start"], dog: [-9, -3, "end"]};
+    let h = `<ellipse cx="${X(.85)}" cy="${Y(.15)}" rx="34" ry="24" class="grp"/><ellipse cx="${X(.05)}" cy="${Y(.85)}" rx="30" ry="26" class="grp"/>`;
+    h += `<line x1="40" y1="184" x2="244" y2="184" class="ax"/><line x1="40" y1="184" x2="40" y2="8" class="ax"/>`;
+    h += `<text x="244" y="200" text-anchor="end" class="cklab">animal? →</text>`;
+    h += `<text transform="translate(28 96) rotate(-90)" text-anchor="middle" class="cklab">colour? →</text>`;
+    for (const [w, v] of EMB) {
+      const [dx, dy, a] = LAB[w];
+      h += `<circle cx="${X(v[0])}" cy="${Y(v[1])}" r="5" class="pt"/><text x="${X(v[0]) + dx}" y="${Y(v[1]) + dy}" text-anchor="${a}" class="ptl">${w}</text>`;
+    }
+    $("scatter").innerHTML = h;
+  })();
+
+  /* =================================================================== 3 positions */
+  (function () {
+    const S1 = ["dog", "bites", "man"], S2 = ["man", "bites", "dog"];
+    let on = false;
+    const hue = w => { let h = 0; for (const c of w) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+    const sw = (w, p) => {
+      const h = (hue(w) + (on ? p * 47 : 0)) % 360;
+      let s = "";
+      for (let k = 0; k < 4; k++) s += `<span class="sw" style="background:hsl(${h},45%,${38 + k * 9}%)"></span>`;
+      return s;
+    };
+    function render() {
+      for (const [id, S] of [["posrow1", S1], ["posrow2", S2]])
+        $(id).innerHTML = S.map((w, i) => `<span class="pword"><span class="chip">${w}</span><span class="swatches">${sw(w, i)}</span></span>`).join("");
+      $("postoggle").textContent = on ? "remove position codes" : "add position codes";
+      $("postoggle").classList.toggle("playing", on);
+      $("posstatus").innerHTML = on
+        ? "Now “dog” in slot 1 has different numbers from “dog” in slot 3, and the same for “man”. The two sentences give <b>different</b> vectors, so the model can tell who bit whom."
+        : "Each word's swatches are <b>the same in both rows</b>: the model sees only the bag {dog, bites, man} and can't tell who bit whom. Switch positions on and watch “dog” and “man” change colour.";
+    }
+    $("postoggle").onclick = () => { on = !on; render(); };
+    render();
+  })();
+
+  (function () {
+    const HANDS = [["fast", 60], ["middle", 15], ["slow", 4]];
+    const x0 = 92, dx = 62, y0 = 58, dy = 40;
+    let h = "";
+    for (const p of [0, 6]) h += `<rect x="${x0 + p * dx - 27}" y="16" width="54" height="${dy * 3 + 24}" rx="10" class="ckhl"/>`;
+    for (let p = 0; p < 8; p++) h += `<text x="${x0 + p * dx}" y="31" text-anchor="middle" class="cklab">pos ${p}</text>`;
+    HANDS.forEach(([name, deg], r) => {
+      const cy = y0 + r * dy;
+      h += `<text x="6" y="${cy + 4}" class="cklab">${name}</text>`;
+      for (let p = 0; p < 8; p++) {
+        const cx = x0 + p * dx, a = deg * p * Math.PI / 180;
+        h += `<circle cx="${cx}" cy="${cy}" r="14" class="ckface"/>` +
+          `<line x1="${cx}" y1="${cy}" x2="${(cx + 11 * Math.sin(a)).toFixed(1)}" y2="${(cy - 11 * Math.cos(a)).toFixed(1)}" class="ckhand"/>` +
+          `<circle cx="${cx}" cy="${cy}" r="2" class="ckhub"/>`;
+      }
+    });
+    $("clocks").innerHTML = h;
+  })();
+
+  /* =================================================================== 4 attention */
+  $("mixrow").innerHTML = [
+    ["10% of the", [0, 0, .9], ""],
+    ["+ 60% of black", [0, .9, .1], ""],
+    ["+ 30% of cat", [.9, .1, 0], ""],
+    ["= what cat found", [.27, .57, .15], "hl"],
+  ].map(([t, v, c]) => `<div class="addrow ${c}"><span>${t}</span>${v3(v)}</div>`).join("");
+
+  const PW = ["the", "black", "cat", "drank", "because", "it", "was", "thirsty"];
+  const PA = [                       // made-up but typical: who each word pulls from (rows add up to 1)
+    [.12, .18, .45, .07, .04, .05, .04, .05],
+    [.10, .15, .55, .06, .03, .05, .03, .03],
+    [.08, .40, .17, .20, .03, .06, .02, .04],
+    [.05, .10, .50, .12, .08, .05, .03, .07],
+    [.04, .04, .12, .35, .10, .08, .07, .20],
+    [.03, .12, .55, .08, .06, .06, .04, .06],
+    [.03, .03, .10, .06, .06, .42, .10, .20],
+    [.03, .05, .30, .12, .08, .22, .12, .08],
+  ];
+  function playground(root, startMasked, toggle) {
+    let masked = startMasked, q = 5;
+    root.insertAdjacentHTML("beforeend",
+      `<div class="qtokens"></div>` +
+      (toggle ? `<div class="modes"><button class="mode" data-m="0">encoder · sees every word</button><button class="mode" data-m="1">decoder · only itself and the past</button></div>` : `<div style="height:12px"></div>`) +
+      `<div class="bars"></div>` +
+      `<div class="maskwrap"><div><div class="small muted" style="margin-bottom:7px">who may look at whom · rows ask, columns answer</div>` +
+      `<div class="maskgrid" style="grid-template-columns:repeat(8,20px)"></div></div><p class="small muted maskcap" style="margin:2px 0 0"></p></div>`);
+    const Q = s => root.querySelector(s);
+    function render() {
+      const row = PA[q].map((w, j) => masked && j > q ? 0 : w), tot = row.reduce((a, b) => a + b, 0), w = row.map(x => x / tot);
+      Q(".qtokens").innerHTML = PW.map((word, i) => `<span class="chip${i === q ? " sel" : ""}" data-i="${i}">${word}</span>`).join("");
+      Q(".bars").innerHTML = PW.map((word, j) => {
+        const blocked = masked && j > q;
+        return `<div class="barrow${blocked ? " blocked" : ""}${j === q ? " q" : ""}"><span class="blabel">${word}</span>` +
+          `<div class="btrack"><div class="bfill" style="width:${blocked ? 0 : (w[j] * 100).toFixed(1)}%"></div></div>` +
+          `<span class="bnum">${blocked ? "✕" : pct(w[j])}</span></div>`;
+      }).join("");
+      let cells = "";
+      for (let i = 0; i < 8; i++)
+        for (let j = 0; j < 8; j++)
+          cells += `<div class="mcell ${!masked || j <= i ? "ok" : "blocked"}${i === q ? " rh" : ""}" data-i="${i}" title="${PW[i]} → ${PW[j]}"></div>`;
+      Q(".maskgrid").innerHTML = cells;
+      const best = w.indexOf(Math.max(...w));
+      Q(".maskcap").innerHTML = masked
+        ? `Decoder: green cells only. “<b>${PW[q]}</b>” may look at ${q === 0 ? "only itself" : `the ${q + 1} words up to itself`}, nothing to its right. Strongest pull: “${PW[best]}” (${pct(w[best])}).` +
+          (q === 1 ? " It can't see “cat” yet, so it doesn't know what it describes." : "")
+        : `Encoder: every cell is green. “<b>${PW[q]}</b>” may look at all 8 words, before and after. Strongest pull: “${PW[best]}” (${pct(w[best])}).`;
+      root.querySelectorAll(".qtokens .chip, .maskgrid .mcell").forEach(el => { el.onclick = () => { q = +el.dataset.i; render(); }; });
+      root.querySelectorAll(".mode").forEach(b => b.classList.toggle("active", (b.dataset.m === "1") === masked));
+    }
+    root.querySelectorAll(".mode").forEach(b => { b.onclick = () => { masked = b.dataset.m === "1"; render(); }; });
+    render();
+  }
+  playground($("play-enc"), false, false);
+  playground($("play-dec"), true, true);
+
+  /* =================================================================== 5 add & norm */
+  $("addrows").innerHTML = [
+    ["cat, before this box", [.9, .1, 0], ""],
+    ["+ what attention found (box 4)", [.27, .57, .15], ""],
+    ["= cat, now a black cat", [1.17, .67, .15], "hl"],
+  ].map(([t, v, c]) => `<div class="addrow ${c}"><span>${t}</span>${v3(v)}</div>`).join("");
+
+  (function () {
+    const base = [3, 2, 0, -1];
+    function render() {
+      const s = Math.pow(10, +$("ln-vol").value), t = +$("ln-sh").value;
+      const x = base.map(v => v * s + t);
+      const m = x.reduce((a, b) => a + b, 0) / x.length;
+      const sd = Math.sqrt(x.reduce((a, b) => a + (b - m) ** 2, 0) / x.length);
+      const y = x.map(v => (v - m) / (sd + 1e-5));
+      $("ln-volv").textContent = "×" + (s < 1 ? s.toFixed(2) : s < 10 ? s.toFixed(1) : Math.round(s));
+      $("ln-shv").textContent = (t < 0 ? "−" : "+") + Math.abs(t);
+      $("ln-in").innerHTML = x.map(v => `<div class="lnrow">${sbar(v, 10)}<span class="mono">${fnum(v)}</span></div>`).join("");
+      $("ln-out").innerHTML = y.map(v => `<div class="lnrow">${sbar(v, 2)}<span class="mono">${fnum(v)}</span></div>`).join("");
+    }
+    $("ln-vol").addEventListener("input", render);
+    $("ln-sh").addEventListener("input", render);
+    render();
+  })();
+
+  /* =================================================================== 6 feed forward */
+  (function () {
+    const D = [["animal?", .9], ["colour word?", .6], ["a black animal?", .5], ["a verb?", -.7], ["plural?", -.4], ["a number?", -.9]];
+    const ix = 46, hx = 178, hw = 196, ox = 512, iy = [86, 134, 182], oy = [86, 134, 182];
+    const hy = D.map((_, i) => 44 + i * 36);
+    let h = `<text x="${ix}" y="18" text-anchor="middle" class="cklab">in: cat's vector</text>` +
+      `<text x="${hx + hw / 2}" y="18" text-anchor="middle" class="cklab">detectors, then ReLU</text>` +
+      `<text x="${ox}" y="18" text-anchor="middle" class="cklab">out: new info</text>`;
+    for (const a of iy) for (const b of hy) h += `<line x1="${ix + 10}" y1="${a}" x2="${hx}" y2="${b}" class="ffe"/>`;
+    D.forEach(([, v], i) => { for (const b of oy) h += `<line x1="${hx + hw}" y1="${hy[i]}" x2="${ox - 10}" y2="${b}" class="ffe ${v > 0 ? "live" : "dead"}"/>`; });
+    for (const a of iy) h += `<circle cx="${ix}" cy="${a}" r="10" class="ffn"/>`;
+    for (const b of oy) h += `<circle cx="${ox}" cy="${b}" r="10" class="ffn out"/>`;
+    D.forEach(([name, v], i) => {
+      const y = hy[i], on = v > 0;
+      h += `<rect x="${hx}" y="${y - 13}" width="${hw}" height="26" rx="13" class="ffd${on ? " on" : ""}"/>` +
+        `<text x="${hx + 14}" y="${y + 4}" class="ffdt${on ? "" : " off"}">${name}</text>` +
+        `<text x="${hx + hw - 12}" y="${y + 4}" text-anchor="end" class="ffdv${on ? "" : " off"}">${on ? v.toFixed(1) : minus(v.toFixed(1)) + " → 0"}</text>`;
+    });
+    h += `<text x="${hx + hw / 2}" y="${hy[5] + 32}" text-anchor="middle" class="cklab">3 fire, 3 stay silent (ReLU turned them to 0)</text>`;
+    $("ffnet").innerHTML = h;
+  })();
+
+  /* =================================================================== 8 shifted right */
+  (function () {
+    const sees = ["<start>", "le", "chat", "noir"], writes = ["le", "chat", "noir", "<end>"];
+    const x0 = 126, dx = 100, w = 78;
+    let h = `<defs><marker id="sh-a" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e8b96a"/></marker>` +
+      `<marker id="sh-g" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#59627a"/></marker></defs>` +
+      `<text x="4" y="47" class="cklab">sees</text><text x="4" y="123" class="cklab">must write</text>`;
+    for (let i = 0; i < 4; i++) {
+      const cx = x0 + i * dx;
+      h += `<text x="${cx}" y="13" text-anchor="middle" class="cklab">slot ${i + 1}</text>` +
+        `<rect x="${cx - w / 2}" y="26" width="${w}" height="30" rx="8" class="sch"/><text x="${cx}" y="46" text-anchor="middle" class="scht">${esc(sees[i])}</text>` +
+        `<rect x="${cx - w / 2}" y="102" width="${w}" height="30" rx="8" class="sch tgt"/><text x="${cx}" y="122" text-anchor="middle" class="scht">${esc(writes[i])}</text>` +
+        `<line x1="${cx - 14}" y1="58" x2="${cx - 14}" y2="99" class="sup" marker-end="url(#sh-g)"/>`;
+      if (i < 3) h += `<path d="M${cx + 16},101 L${cx + dx - 16},59" class="sarr" marker-end="url(#sh-a)"/>`;
+    }
+    $("shiftfig").innerHTML = h;
+  })();
+
+  /* =================================================================== 9 the writer's stamps */
+  (function () {
+    const D = window.LESSON1;
+    if (!D) return;
+    const ids = ["<bos>", ...D.tokens.slice(0, -1)], st = slotStamps(ids), n = 10;
+    const col = i => D.tokens[i] === "|" ? "#8a93a6" : D.tokens[i] === "<end>" ? "#e8b96a" : DCOL(D.gaps[D.tokmap[i]].d);
+    let h = `<div class="slh">sees</div>`;
+    for (let i = 0; i < n; i++) h += `<div class="slc"><span class="chip sm">${esc(ids[i])}</span></div>`;
+    h += `<div class="slh">must write</div>`;
+    for (let i = 0; i < n; i++) h += `<div class="slc"><span class="chip sm" style="--c:${col(i)}">${esc(D.tokens[i])}</span></div>`;
+    h += `<div class="slh">stamp</div>`;
+    for (let i = 0; i < n; i++) h += `<div class="slc stamp">r${st[i][0]} c${st[i][1]}</div>`;
+    h += `<div></div><div class="slc more" style="grid-column:span ${n}">… ${D.tokens.length} slots in all for this 2×2 kolam</div>`;
+    $("slots").innerHTML = h;
+  })();
+
+  /* =================================================================== 10 mask */
+  (function () {
+    const L = ["<start>", "le", "chat", "noir"];
+    let h = `<div></div>` + L.map(s => `<div class="mmh">${esc(s)}</div>`).join("");
+    L.forEach((r, i) => {
+      h += `<div class="mmh row">${esc(r)}</div>`;
+      L.forEach((c, j) => { h += `<div class="mm ${j <= i ? "ok" : "no"}">${j <= i ? "✓" : "✕"}</div>`; });
+    });
+    $("maskmini").innerHTML = h;
+  })();
+
+  /* =================================================================== 11 cross-attention */
+  (function () {
+    const EN = ["the", "black", "cat"], FR = ["le", "chat", "noir", "<end>"];
+    const A = {"le": [.85, .05, .10], "chat": [.05, .15, .80], "noir": [.03, .87, .10], "<end>": [.15, .25, .60]};
+    const CAP = {
+      "le": "Writing <b>le</b>: it looks at <b>the</b> (85%). Same place, easy.",
+      "chat": "Writing <b>chat</b>: it looks at <b>cat</b> (80%).",
+      "noir": "Writing <b>noir</b>: it looks at <b>black</b> (87%). That's English word 2, while noir is French word 3. Cross-attention <b>searches</b>; it doesn't copy the same position. So a different word order is no problem.",
+      "<end>": "Writing <b>&lt;end&gt;</b>: it glances over the last words. Everything is translated, time to stop.",
+    };
+    const ex = [130, 240, 350], fx = [80, 180, 280, 380], ey = 40, fy = 134;
+    let sel = "noir";
+    function render() {
+      const a = A[sel], k = FR.indexOf(sel);
+      let h = `<text x="4" y="${ey + 4}" class="cklab">reader</text><text x="4" y="${fy + 4}" class="cklab">writer</text>`;
+      EN.forEach((w, j) => {
+        h += `<line x1="${fx[k]}" y1="${fy - 15}" x2="${ex[j]}" y2="${ey + 15}" stroke="#e8b96a" stroke-width="${(1 + 9 * a[j]).toFixed(1)}" stroke-opacity="${(0.2 + 0.8 * a[j]).toFixed(2)}" stroke-linecap="round"/>`;
+      });
+      EN.forEach((w, j) => {
+        h += `<rect x="${ex[j] - 36}" y="${ey - 15}" width="72" height="30" rx="8" class="alw"/><text x="${ex[j]}" y="${ey + 5}" text-anchor="middle" class="alt">${w}</text>` +
+          `<text x="${ex[j]}" y="${ey - 21}" text-anchor="middle" class="alp">${pct(a[j])}</text>`;
+      });
+      FR.forEach((w, i) => {
+        h += `<g data-fr="${esc(w)}"><rect x="${fx[i] - 36}" y="${fy - 15}" width="72" height="30" rx="8" class="alw fr${w === sel ? " sel" : ""}"/>` +
+          `<text x="${fx[i]}" y="${fy + 5}" text-anchor="middle" class="alt">${esc(w)}</text></g>`;
+      });
+      $("align").innerHTML = h;
+      $("aligncap").innerHTML = CAP[sel];
+    }
+    $("align").addEventListener("click", e => {
+      const g = e.target.closest("[data-fr]");
+      if (g) { sel = g.getAttribute("data-fr"); render(); }
+    });
+    render();
+  })();
+
+  (function () {
+    const D = window.LESSON1;
+    if (!D) return;
+    const ids = ["<bos>", ...D.tokens.slice(0, -1)], st = slotStamps(ids);
+    const PICK = [
+      [3, "the gap left of the top-left dot", "a horn"],
+      [4, "the gap between the two top dots", "a crossing"],
+      [0, "the gap above the top-left dot", "nothing: a wall"],
+      [7, "the gap below the top-left dot", "a crossing"],
+    ];
+    const step = 512 / 24;
+    let grid = "";
+    for (let i = 1; i < 24; i++) {
+      const p = (i * step).toFixed(2);
+      grid += `<line x1="${p}" y1="0" x2="${p}" y2="512"/><line x1="0" y1="${p}" x2="512" y2="${p}"/>`;
+    }
+    grid = `<g stroke="rgba(238,233,221,.08)" stroke-width="1">${grid}</g>`;
+    let sel = 0;
+    function render() {
+      const [p, where, what] = PICK[sel], g = D.gaps[D.tokmap[p]], [r, c] = st[p];
+      $("xheat").innerHTML = `<defs><radialGradient id="xh-g"><stop offset="0" stop-color="#e8b96a" stop-opacity=".95"/>` +
+        `<stop offset=".5" stop-color="#e8b96a" stop-opacity=".45"/><stop offset="1" stop-color="#e8b96a" stop-opacity="0"/></radialGradient></defs>` +
+        grid + `<circle cx="${g.x}" cy="${g.y}" r="62" fill="url(#xh-g)"/>` +
+        `<circle cx="${g.x}" cy="${g.y}" r="15" fill="none" stroke="#e8b96a" stroke-width="3"/>`;
+      $("xpick").innerHTML = PICK.map(([pp], i) => {
+        const [rr, cc] = st[pp];
+        return `<span class="xopt${i === sel ? " sel" : ""}" data-i="${i}"><span class="chip" style="--c:${DCOL(D.gaps[D.tokmap[pp]].d)}">${D.tokens[pp]}</span><span class="tid">r${rr} c${cc}</span></span>`;
+      }).join("");
+      $("xcap").innerHTML = `Writing token ${p + 1}, “<b>${D.tokens[p]}</b>”. Its stamp says <b>row ${r}, column ${c}</b>: ${where}. ` +
+        `The query asks “what's drawn at my gap?”, and the patches there answer: ${what}.`;
+    }
+    $("xpick").addEventListener("click", e => {
+      const o = e.target.closest("[data-i]");
+      if (o) { sel = +o.dataset.i; render(); }
+    });
+    render();
+  })();
+
+  /* =================================================================== 13 linear */
+  $("linbars").innerHTML = [["noir", 6.2], ["blanc", 3.9], ["mange", 2.1], ["chat", 0.4], ["<end>", -0.6], ["le", -1.0]]
+    .map(([w, v]) => `<div class="lrow"><span class="mono">${esc(w)}</span>${sbar(v, 7)}<span class="mono num">${minus(v.toFixed(1))}</span></div>`).join("") +
+    `<div class="lrow"><span class="mono muted">…</span><span class="small muted">about 37,000 more, one score each</span><span></span></div>`;
+
+  /* =================================================================== 14 softmax */
+  (function () {
+    const W = [["noir", 2.0], ["blanc", 1.0], ["chat", 0.1]];
+    let blocked = false;
+    $("smx").innerHTML = W.map(([w, v]) =>
+      `<div class="smrow"><span class="mono">${w}</span><input type="range" min="-3" max="6" step="0.1" value="${v}" aria-label="score of ${w}">` +
+      `<span class="mono smv"></span><div class="btrack"><div class="bfill"></div></div><span class="bnum"></span></div>`).join("");
+    const rows = [...$("smx").querySelectorAll(".smrow")];
+    function render() {
+      const s = rows.map((r, i) => blocked && i === 2 ? -Infinity : +r.querySelector("input").value);
+      const e = s.map(Math.exp), tot = e.reduce((a, b) => a + b, 0);
+      rows.forEach((r, i) => {
+        r.querySelector(".smv").textContent = s[i] === -Infinity ? "−∞" : minus(s[i].toFixed(1));
+        r.querySelector(".bfill").style.width = (e[i] / tot * 100).toFixed(1) + "%";
+        r.querySelector(".bnum").textContent = Math.round(e[i] / tot * 100) + "%";
+        r.querySelector("input").disabled = blocked && i === 2;
+        r.classList.toggle("blocked", blocked && i === 2);
+      });
+      $("smsum").textContent = "eˣ: " + e.map(v => v.toFixed(2)).join(" + ") + " = " + tot.toFixed(2) + "   → each share = its eˣ ÷ " + tot.toFixed(2);
+      $("mask-chat").textContent = blocked ? "unblock “chat”" : "block “chat” (score → −∞)";
+    }
+    $("smx").addEventListener("input", render);
+    $("mask-chat").onclick = () => { blocked = !blocked; render(); };
+    render();
+  })();
+
+  /* =================================================================== 15 the loop */
+  (function () {
+    const ST = [
+      {sees: ["<start>"], cand: [["le", .92], ["la", .05], ["un", .02]]},
+      {sees: ["<start>", "le"], cand: [["chat", .88], ["chien", .06], ["noir", .03]]},
+      {sees: ["<start>", "le", "chat"], cand: [["noir", .81], ["blanc", .09], ["mange", .04]]},
+      {sees: ["<start>", "le", "chat", "noir"], cand: [["<end>", .95], [".", .03], ["et", .01]]},
+    ];
+    let k = 0;
+    function render() {
+      const done = k >= ST.length, sees = done ? [...ST[3].sees, "<end>"] : ST[k].sees;
+      $("pstrip").innerHTML = sees.map((w, i) => `<span class="chip${k > 0 && i === sees.length - 1 ? " hot" : ""}">${esc(w)}</span>`).join("") +
+        (done ? "" : `<span class="chip cursor"></span>`);
+      if (done) {
+        $("pbars").innerHTML = "";
+        $("pcap").innerHTML = `Done: <b>le chat noir</b>. It stopped because it picked <span class="mono">&lt;end&gt;</span>. That was four full runs of the right tower, one per word.`;
+      } else {
+        const c = ST[k].cand;
+        $("pbars").innerHTML = c.map(([w, p], i) => `<div class="barrow${i === 0 ? " q" : ""}"><span class="blabel">${esc(w)}</span>` +
+          `<div class="btrack"><div class="bfill" style="width:${p * 100}%"></div></div><span class="bnum">${pct(p)}</span></div>`).join("");
+        $("pcap").innerHTML = `Run ${k + 1}: the writer sees <span class="mono">${esc(ST[k].sees.join(" "))}</span> → picks <b>${esc(c[0][0])}</b> (${pct(c[0][1])}), which goes back in at the bottom right.` +
+          (k === 2 ? " It found “black” across the bridge (box 11), so “noir” wins over “blanc”." : "");
+      }
+      $("pnext").disabled = done;
+    }
+    $("pnext").onclick = () => { k++; render(); };
+    $("preset").onclick = () => { k = 0; render(); };
+    render();
+  })();
+})();
+</script>
+</body>
+</html>

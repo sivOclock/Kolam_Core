@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transformers, from our kolam code — visual lessons</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Transformers, from our own kolam code</h1>
+  <p class="subtitle">A slow, visual course. One lesson per page. Every idea is tied to a real line
+  in <code>kolam_feed/model.py</code> and drawn with the repo's own renderer.
+  <b>New to transformers? Start at Lesson 0.</b></p>
+
+  <div class="card">
+    <p class="small muted" style="margin-top:0">
+      Open these pages straight from the folder in a browser, no server needed. To build the next
+      lesson, ask in the chat: <i>“build lesson 2”</i>. The code that draws the examples is
+      <code>lessons/make_assets.py</code> (run with <code>.venv/bin/python lessons/make_assets.py</code>).
+    </p>
+  </div>
+
+  <div class="card">
+    <h2><a href="roadmap.html">Roadmap: everything our model uses →</a></h2>
+    <p class="small muted" style="margin:0">The full checklist, from "what is a neuron" and CNNs to KV caches and
+    running on phones, each with where it shows up in our code and where to learn it.</p>
+  </div>
+
+  <div class="card">
+    <h2>The course so far</h2>
+    <ul class="lesson-list">
+      <li>
+        <span class="num">0</span>
+        <span class="body">
+          <b><a href="lesson-0.html">The transformer, box by box</a></b>
+          <div>The famous 2017 picture stays pinned beside you; each box lights up in turn with one small example and where it lives in our model.</div>
+        </span>
+        <span class="status ready">ready</span>
+      </li>
+      <li>
+        <span class="num">1</span>
+        <span class="body">
+          <b><a href="lesson-1.html">The loop — how one token gets written</a></b>
+          <div>The decoder writes the encoding one token at a time. Watch it happen, gap by gap, on a real kolam.</div>
+        </span>
+        <span class="status ready">ready</span>
+      </li>
+      <li>
+        <span class="num">2</span>
+        <span class="body">
+          <b>Attention by hand — Q/K/V with real numbers</b>
+          <div>What each token asks for, what the image offers back, and how softmax mixes it. No hand-waving.</div>
+        </span>
+        <span class="status next">next</span>
+      </li>
+      <li>
+        <span class="num">3</span>
+        <span class="body">
+          <b>The block — multi-head, residuals, LayerNorm, MLP</b>
+          <div>Why one attention is not enough, and why every sublayer has a shortcut around it.</div>
+        </span>
+        <span class="status">planned</span>
+      </li>
+      <li>
+        <span class="num">4</span>
+        <span class="body">
+          <b>Positions — “I'm writing row 3, column 5”</b>
+          <div>Transformers have no sense of order; GPT says “token #17”, our model says where in the encoding it is.</div>
+        </span>
+        <span class="status">planned</span>
+      </li>
+      <li>
+        <span class="num">5</span>
+        <span class="body">
+          <b>Training — teacher forcing and the causal mask</b>
+          <div>Why one forward pass trains all positions at once, and what the loss really measures.</div>
+        </span>
+        <span class="status">planned</span>
+      </li>
+      <li>
+        <span class="num">6</span>
+        <span class="body">
+          <b>Reading a new image — constrained decoding</b>
+          <div>Greedy + allowed-token rules, why it's slow, and what a KV cache fixes.</div>
+        </span>
+        <span class="status">planned</span>
+      </li>
+      <li>
+        <span class="num">7</span>
+        <span class="body">
+          <b>Model B, the reader — same attention, different posture</b>
+          <div>The encoder-side transformer, corner heatmaps, homography: reading every gap at once.</div>
+        </span>
+        <span class="status">planned</span>
+      </li>
+    </ul>
+  </div>
+
+  <footer class="end">
+    Written version, same material: <code>docs/model_experiments.md</code> §3–5.
+  </footer>
+
+</div>
+</body>
+</html>

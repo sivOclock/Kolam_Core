@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 0 — Transformers from zero · Transformers from our kolam code</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .roadmap { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 13.5px; color: var(--muted); }
+  .roadmap .pill { border: 1px solid var(--line); border-radius: 999px; padding: 4px 13px; background: var(--panel); }
+  .roadmap .pill.here { border-color: var(--amber); color: var(--amber); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="crumb">
+    <a href="index.html">← all lessons</a>
+    <span class="pill">Lesson 0 · start here</span>
+    <a href="lesson-1.html">Lesson 1 →</a>
+  </div>
+
+  <h1>Lesson 0 · Transformers, from zero</h1>
+  <p class="subtitle">Assume you know nothing. This page is the whole idea, slowly: tokens, vectors,
+  attention, masks, encoders and decoders. Everything else in the course zooms into one box of it.</p>
+
+  <div class="roadmap" style="margin-bottom:22px">
+    <span class="pill here">0 · the whole idea (this page)</span> →
+    <span class="pill">1 · the loop in our model</span> →
+    <span class="pill">2 · attention by hand</span> →
+    <span class="pill">3–7 · the pieces, one by one</span>
+  </div>
+
+  <!-- ------------------------------------------------------------ 10 seconds -->
+  <div class="card">
+    <h2>The ten-second version</h2>
+    <p><b>A transformer is a machine that takes a list of things — words, sounds, image patches, our
+    kolam digits — turns each into a vector, and then lets the vectors look at each other and mix,
+    over and over, until each one “knows enough” to answer a question.</b></p>
+    <p>That question is almost always: <i>“given everything so far, what comes next?”</i></p>
+    <p class="muted small">ChatGPT, Claude, BERT, the image models that caption photos — all the same
+    machine with different clothes. Both of our kolam models too: Model A wraps a transformer around
+    an image and writes the encoding digit by digit; Model B wraps one around the image and reads all
+    the gaps at once. If you understand this page, you understand 90% of both.</p>
+  </div>
+
+  <!-- ------------------------------------------------------------ 1 vectors -->
+  <div class="card">
+    <h2>1 · Everything first becomes numbers: a vector</h2>
+    <p>Computers can't multiply words. So step one, always: cut the input into <b>tokens</b> and give
+    every token a <b>vector</b> — <i>a list of numbers</i>. Think of the list as coordinates: a point
+    somewhere in a huge space. <b>Similar meanings end up at nearby points</b>, because training pushes
+    them there.</p>
+
+    <p class="small muted">Each token is replaced by a swatch row (here 6 numbers instead of the real 256). Look how
+    <b>cat</b> and <b>dog</b> — similar things — get nearly the same swatches, while <b>mat</b> and <b>run</b> get different ones:</p>
+
+    <div style="display:grid; gap:8px; margin:14px 0">
+      <div style="display:flex; gap:12px; align-items:center"><span class="chip">cat</span>
+        <span class="vec" data-vec="90,20,80,10,30,70"></span></div>
+      <div style="display:flex; gap:12px; align-items:center"><span class="chip">dog</span>
+        <span class="vec" data-vec="85,25,75,15,35,65"></span></div>
+      <div style="display:flex; gap:12px; align-items:center"><span class="chip">mat</span>
+        <span class="vec" data-vec="20,80,10,70,60,15"></span></div>
+      <div style="display:flex; gap:12px; align-items:center"><span class="chip">run</span>
+        <span class="vec" data-vec="25,10,85,20,15,80"></span></div>
+    </div>
+
+    <p class="small"><b>Why a machine would ever mix things:</b> a lone vector can only say what one
+    token is. To understand a sentence — or an image — a token has to know about the <i>others</i>.
+    That mixing is attention.</p>
+    <p class="small muted" style="margin-bottom:0">Our model's tokens: <span class="mono">"0"…"8", "|", &lt;end&gt;</span>.
+    Each one got its own learned vector. That vocabulary is tiny — an LLM's is tens of thousands.</p>
+  </div>
+
+  <!-- ------------------------------------------------------------ 2 soft lookup -->
+  <div class="card">
+    <h2>2 · Attention is a soft lookup</h2>
+    <p>Forget neural networks for a second. Imagine a library. You walk in with a question. Every book
+    has a short label. You compare your question to every label and get a match score. Then — this is
+    the only unusual part — <b>you don't pick one book. You take a little from every book, in
+    proportion to how well it matched.</b> Mostly the best matches, a pinch of everything else.
+    That mix is your answer.</p>
+
+    <div class="lookup" style="margin:16px 0">
+      <div class="box">
+        <div class="small muted">your question is a <b>Query</b></div>
+        <div style="margin-top:8px">“something animal-like that purrs”</div>
+      </div>
+      <div class="box">
+        <div class="small muted" style="margin-bottom:8px">every book has a <b>Key</b>; compare:</div>
+        <div class="barrow"><span class="blabel">cat</span><div class="btrack"><div class="bfill" style="width:62%"></div></div><span class="bnum">62%</span></div>
+        <div class="barrow"><span class="blabel">dog</span><div class="btrack"><div class="bfill" style="width:24%"></div></div><span class="bnum">24%</span></div>
+        <div class="barrow"><span class="blabel">car</span><div class="btrack"><div class="bfill" style="width:9%"></div></div><span class="bnum">9%</span></div>
+        <div class="barrow"><span class="blabel">mat</span><div class="btrack"><div class="bfill" style="width:5%"></div></div><span class="bnum">5%</span></div>
+      </div>
+      <div class="box">
+        <div class="small muted">you take these shares of each book's <b>Value</b> (its content):</div>
+        <div style="margin-top:8px" class="small">62% of <b>cat</b> + 24% of <b>dog</b> + 9% of <b>car</b> + 5% of <b>mat</b>
+        <br><span class="muted">≈ “an animal, mostly cat-ish”.</span></div>
+      </div>
+    </div>
+
+    <p>In a transformer, the “buttons” on the machine are these three:</p>
+    <div class="formula" style="margin:14px 0">
+      query  = <i>what am I looking for?</i> &nbsp;·&nbsp; key = <i>what do I offer?</i> &nbsp;·&nbsp; value = <i>what do I hand over?</i>
+    </div>
+    <p class="small">Each meaning is itself a vector, so “comparing” two of them means a <b>dot
+    product</b>: multiply the numbers pairwise and add — big when the vectors point the same way.
+    Big score = good match. Then <b>softmax</b> turns the raw scores into percentages that sum to 100,
+    and the output is the percentage-weighted mix of the values. In symbols — the only formula on this
+    page, promise:</p>
+    <div class="formula" style="margin:14px 0">
+      weights = softmax( Q · Kᵀ / √d ) &nbsp;&nbsp;then&nbsp;&nbsp; output = weights · V
+    </div>
+    <p class="small muted" style="margin-bottom:0">We'll actually compute this with real numbers in
+    Lesson 2 — pocket calculator style.</p>
+  </div>
+
+  <!-- ------------------------------------------------------------ 3 self-attention playground -->
+  <div class="card play">
+    <h2>3 · Self-attention — everyone looks at everyone</h2>
+    <p>Here's the trick that makes the whole thing tick: use <b>the same list on both sides</b>. Each
+    token makes its own query, and every token in the list offers its key and value. The sentence
+    attends to <i>itself</i>. Click a word below to make it the query and watch where its attention
+    goes.</p>
+
+    <div class="qtokens" id="qtokens" style="margin-top:16px"></div>
+
+    <div class="modes">
+      <button id="mode-bert" class="mode">BERT mode · sees every word</button>
+      <button id="mode-gpt" class="mode active">GPT mode · sees only the past (masked)</button>
+    </div>
+
+    <div class="bars" id="bars"></div>
+
+    <div class="maskwrap">
+      <div>
+        <div class="small muted" style="margin-bottom:7px">who is allowed to look at whom: rows ask, columns answer</div>
+        <div class="maskgrid" id="maskgrid"></div>
+      </div>
+      <p class="small muted maskcap" id="maskcap" style="margin:2px 0 0"></p>
+    </div>
+
+    <p class="small muted" style="margin-bottom:0" id="playcap"></p>
+  </div>
+
+  <!-- ------------------------------------------------------------ 4 mask explanation -->
+  <div class="card">
+    <h2>4 · Masked attention — the “must not cheat” rule</h2>
+    <p>There are two ways to use self-attention, and the difference is one tiny rule: <b>is looking
+    ahead allowed?</b></p>
+    <p><b>Masked self-attention</b> (the GPT mode above) blocks every token from seeing anything to
+    its right — the future simply isn't there yet. When the model writes text word by word, it must
+    decide each next word from the past alone; a mask enforces exactly that, always. Without it, the
+    model could peek at the answer it's supposed to produce. With it, one training pass can check
+    <i>every</i> position's prediction at once (that's Lesson 5's magic trick).</p>
+    <p style="margin-bottom:0">Our Model A writes encodings, so its self-attention is <b>masked</b>,
+    exactly like GPT's. Lesson 1 replays exactly this masked loop on a real kolam, token by
+    token.</p>
+  </div>
+
+  <!-- ------------------------------------------------------------ 5 heads + block -->
+  <div class="card">
+    <h2>5 · Many heads, one block, N layers</h2>
+    <p>One way of looking is not enough. So the vector (256 numbers wide, in our model) is split into
+    <b>heads</b> — in ours, 8 of 32 numbers — each with its own Q, K, V. One head might learn “track
+    the subject”, another “track the previous word”, another “look at the punctuation”. Then the 8
+    results are glued back together. Below: three (made-up, but realistic) heads for the word
+    <b>it</b> in <span class="mono">the cat drank because it was thirsty</span>.</p>
+
+    <div class="heads" style="margin:16px 0">
+      <div>
+        <div class="small muted" style="margin-bottom:8px">head 1 · finds the subject</div>
+        <div class="barrow"><span class="blabel">cat</span><div class="btrack"><div class="bfill" style="width:70%"></div></div><span class="bnum">70%</span></div>
+        <div class="barrow"><span class="blabel">the</span><div class="btrack"><div class="bfill" style="width:10%"></div></div><span class="bnum">10%</span></div>
+        <div class="barrow"><span class="blabel">drank</span><div class="btrack"><div class="bfill" style="width:10%"></div></div><span class="bnum">10%</span></div>
+        <div class="barrow"><span class="blabel">was</span><div class="btrack"><div class="bfill" style="width:6%"></div></div><span class="bnum">6%</span></div>
+        <div class="barrow"><span class="blabel">it</span><div class="btrack"><div class="bfill" style="width:4%"></div></div><span class="bnum">4%</span></div>
+      </div>
+      <div>
+        <div class="small muted" style="margin-bottom:8px">head 2 · the word just before</div>
+        <div class="barrow"><span class="blabel">was</span><div class="btrack"><div class="bfill" style="width:60%"></div></div><span class="bnum">60%</span></div>
+        <div class="barrow"><span class="blabel">it</span><div class="btrack"><div class="bfill" style="width:25%"></div></div><span class="bnum">25%</span></div>
+        <div class="barrow"><span class="blabel">thirsty</span><div class="btrack"><div class="bfill" style="width:15%"></div></div><span class="bnum">15%</span></div>
+      </div>
+      <div>
+        <div class="small muted" style="margin-bottom:8px">head 3 · the clause's reason</div>
+        <div class="barrow"><span class="blabel">because</span><div class="btrack"><div class="bfill" style="width:55%"></div></div><span class="bnum">55%</span></div>
+        <div class="barrow"><span class="blabel">drank</span><div class="btrack"><div class="bfill" style="width:25%"></div></div><span class="bnum">25%</span></div>
+        <div class="barrow"><span class="blabel">it</span><div class="btrack"><div class="bfill" style="width:10%"></div></div><span class="bnum">10%</span></div>
+        <div class="barrow"><span class="blabel">thirsty</span><div class="btrack"><div class="bfill" style="width:10%"></div></div><span class="bnum">10%</span></div>
+      </div>
+    </div>
+
+    <p>A full <b>transformer layer</b> has just two mixing steps, wrapped in safety rails:</p>
+    <div style="display:flex; gap:26px; flex-wrap:wrap; align-items:flex-start">
+      <svg class="diagram" viewBox="0 0 460 360" style="max-width:420px" role="img" aria-label="one transformer block">
+        <defs>
+          <marker id="ah0" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#7c86a0"/>
+          </marker>
+          <marker id="ah0g" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#56c478"/>
+          </marker>
+        </defs>
+        <text class="n" x="190" y="16" text-anchor="middle">in: one vector per token</text>
+        <line class="ar" x1="190" y1="24" x2="190" y2="44" marker-end="url(#ah0)"/>
+        <rect class="bx" x="90" y="46" width="200" height="48" rx="10"/>
+        <text class="t" x="190" y="66" text-anchor="middle">① self-attention</text>
+        <text class="n" x="190" y="84" text-anchor="middle">mixes across tokens</text>
+        <path d="M290,70 C330,70 330,132 204,132" style="fill:none;stroke:#56c478;stroke-width:1.5" marker-end="url(#ah0g)"/>
+        <text class="n" x="340" y="64" style="fill:var(--green)">residual: the old vector</text>
+        <text class="n" x="340" y="78" style="fill:var(--green)">skips ahead, not lost</text>
+        <line class="ar" x1="190" y1="94" x2="190" y2="118" marker-end="url(#ah0)"/>
+        <circle cx="190" cy="132" r="13" fill="#232937" stroke="#3a4260"/>
+        <text x="190" y="138" text-anchor="middle" font-size="16" fill="#eee9dd">+</text>
+        <line class="ar" x1="190" y1="145" x2="190" y2="162" marker-end="url(#ah0)"/>
+        <rect class="bx" x="105" y="164" width="170" height="36" rx="10"/>
+        <text class="t" x="190" y="187" text-anchor="middle">LayerNorm</text>
+        <line class="ar" x1="190" y1="200" x2="190" y2="220" marker-end="url(#ah0)"/>
+        <rect class="bx" x="90" y="222" width="200" height="50" rx="10"/>
+        <text class="t" x="190" y="243" text-anchor="middle">② MLP</text>
+        <text class="n" x="190" y="261" text-anchor="middle">per token: 256 → 1024 → 256</text>
+        <path d="M290,247 C335,247 335,298 204,298" style="fill:none;stroke:#56c478;stroke-width:1.5" marker-end="url(#ah0g)"/>
+        <text class="n" x="340" y="242" style="fill:var(--green)">residual again</text>
+        <line class="ar" x1="190" y1="272" x2="190" y2="284" marker-end="url(#ah0)"/>
+        <circle cx="190" cy="298" r="13" fill="#232937" stroke="#3a4260"/>
+        <text x="190" y="304" text-anchor="middle" font-size="16" fill="#eee9dd">+</text>
+        <line class="ar" x1="190" y1="311" x2="190" y2="328" marker-end="url(#ah0)"/>
+        <text class="n" x="190" y="346" text-anchor="middle">out → next layer (or the final answer)</text>
+      </svg>
+      <ul class="small" style="max-width:420px">
+        <li><b>Attention mixes across tokens</b> — information travels between positions.</li>
+        <li><b>MLP thinks within one token</b> — each vector is processed alone, 256→1024→256.</li>
+        <li><b>Residual</b> (<span class="mono">x + …</span>): every sublayer keeps a copy of its
+          input on a side path, so nothing is ever overwritten and gradients can flow in deep stacks.</li>
+        <li><b>LayerNorm</b>: rescales each vector after every step, so the numbers never drift out of range.</li>
+        <li>That whole drawing is <b>one layer</b>. Stack it: ours is <b>4 layers deep</b>,
+          GPT-3 was 96. Same block, different height.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------ 6 positions -->
+  <div class="card">
+    <h2>6 · Positions — without them, it's a bag of words</h2>
+    <p>Attention compares vectors, and vectors only know <i>what</i> a token is, not <i>where</i> it
+    sat. Shuffle the input and each word's mix looks the same as before. That's fatal: <b>“dog bites
+    man” and “man bites dog” would give the model the exact same picture.</b> So we add position
+    information to every token's vector. Toggle it below:</p>
+
+    <div class="posrows" id="posrows">
+      <div class="prow" id="posrow1"></div>
+      <div class="prow" id="posrow2"></div>
+    </div>
+    <button id="postoggle">add position codes</button>
+    <p class="posstatus" id="posstatus" style="margin-bottom:0"></p>
+    <p class="small muted" style="margin-top:12px">GPT adds “I am token #17”. Our encoder adds
+    “I am row 3, column 5 of the encoding” — same idea, shaped to the task. That's Lesson 4.</p>
+  </div>
+
+  <!-- ------------------------------------------------------------ 7 three bodies -->
+  <div class="card">
+    <h2>7 · Three bodies: encoder, decoder, and both</h2>
+    <p>You now know the only two ingredients: <b>attention</b> and <b>MLP</b>, wrapped in residuals and
+    norms. Everything famous is a different way of arranging them:</p>
+
+    <div class="archrow" style="margin-top:16px">
+      <div class="card">
+        <h3>Encoder only</h3>
+        <svg class="diagram" viewBox="0 0 220 200" role="img" aria-label="encoder stack">
+          <defs>
+            <marker id="ae" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#7c86a0"/>
+            </marker>
+          </defs>
+          <line class="ar" x1="110" y1="14" x2="110" y2="32" marker-end="url(#ae)"/>
+          <rect class="bx" x="30" y="34" width="160" height="42" rx="10"/>
+          <text class="t" x="110" y="52" text-anchor="middle">self-attention</text>
+          <text class="n" x="110" y="68" text-anchor="middle">no mask: sees everything</text>
+          <line class="ar" x1="110" y1="76" x2="110" y2="92" marker-end="url(#ae)"/>
+          <rect class="bx" x="30" y="94" width="160" height="38" rx="10"/>
+          <text class="t" x="110" y="118" text-anchor="middle">MLP</text>
+          <line class="ar" x1="110" y1="132" x2="110" y2="150" marker-end="url(#ae)"/>
+          <text class="n" x="110" y="168" text-anchor="middle">… this layer × N …</text>
+          <text class="n" x="110" y="186" text-anchor="middle">→ one rich vector per token</text>
+        </svg>
+        <p class="small" style="margin-bottom:0"><b>BERT</b>, image models (ViT) — and our <b>Model B</b>.
+        Reads and understands; doesn't write.</p>
+      </div>
+
+      <div class="card">
+        <h3>Decoder only</h3>
+        <svg class="diagram" viewBox="0 0 220 200" role="img" aria-label="decoder stack">
+          <defs>
+            <marker id="ad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#7c86a0"/>
+            </marker>
+          </defs>
+          <line class="ar" x1="110" y1="14" x2="110" y2="32" marker-end="url(#ad)"/>
+          <rect class="bx" x="30" y="34" width="160" height="42" rx="10"/>
+          <text class="t" x="110" y="52" text-anchor="middle">self-attention</text>
+          <text class="n" x="110" y="68" text-anchor="middle">masked: no peeking ahead</text>
+          <line class="ar" x1="110" y1="76" x2="110" y2="92" marker-end="url(#ad)"/>
+          <rect class="bx" x="30" y="94" width="160" height="38" rx="10"/>
+          <text class="t" x="110" y="118" text-anchor="middle">MLP</text>
+          <line class="ar" x1="110" y1="132" x2="110" y2="150" marker-end="url(#ad)"/>
+          <text class="n" x="110" y="168" text-anchor="middle">… × N …</text>
+          <text class="n" x="110" y="186" text-anchor="middle">→ one score per next token</text>
+        </svg>
+        <p class="small" style="margin-bottom:0"><b>GPT</b>, Claude, LLMs — and our <b>Model A</b>.
+        Writes, one token at a time, never looking ahead.</p>
+      </div>
+
+      <div class="card">
+        <h3>Encoder + decoder</h3>
+        <svg class="diagram" viewBox="0 0 220 210" role="img" aria-label="encoder-decoder">
+          <defs>
+            <marker id="ac" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#e8b96a"/>
+            </marker>
+            <marker id="ab" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#7c86a0"/>
+            </marker>
+          </defs>
+          <text class="t" x="55" y="18" text-anchor="middle">encoder</text>
+          <rect class="bx" x="15" y="26" width="80" height="40" rx="9"/>
+          <text class="n" x="55" y="50" text-anchor="middle">self-attn</text>
+          <line class="ar" x1="55" y1="66" x2="55" y2="78" marker-end="url(#ab)"/>
+          <rect class="bx" x="15" y="80" width="80" height="34" rx="9"/>
+          <text class="n" x="55" y="101" text-anchor="middle">MLP</text>
+          <text class="n" x="55" y="132" text-anchor="middle">× N</text>
+
+          <text class="t" x="166" y="18" text-anchor="middle">decoder</text>
+          <rect class="bx" x="126" y="26" width="80" height="34" rx="9"/>
+          <text class="n" x="166" y="47" text-anchor="middle">masked self-attn</text>
+          <rect class="bx" x="126" y="68" width="80" height="34" rx="9" style="stroke:var(--amber)"/>
+          <text class="n" x="166" y="89" text-anchor="middle" style="fill:var(--amber)">cross-attn</text>
+          <rect class="bx" x="126" y="110" width="80" height="34" rx="9"/>
+          <text class="n" x="166" y="131" text-anchor="middle">MLP</text>
+          <text class="n" x="166" y="160" text-anchor="middle">× N</text>
+
+          <line x1="95" y1="46" x2="122" y2="80" style="stroke:#e8b96a;stroke-width:1.6" marker-end="url(#ac)"/>
+          <text class="n" x="110" y="188" text-anchor="middle" style="fill:var(--amber)">cross-attention: Q from the</text>
+          <text class="n" x="110" y="200" text-anchor="middle" style="fill:var(--amber)">decoder, K and V from the encoder</text>
+        </svg>
+        <p class="small" style="margin-bottom:0">The 2017 translation paper. One transformer reads one
+        thing (a sentence — for us, the image through the CNN “eye”), the other writes another,
+        glancing over through <b>cross-attention</b>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------ 8 training -->
+  <div class="card">
+    <h2>8 · How it learns: guess the next token, a billion times</h2>
+    <p>Training is one game, played on mountains of text (or kolam encodings): <b>cover the next
+    token, guess it from everything before, compare with the truth, nudge every weight a tiny bit</b>
+    toward less surprise. That's it. Cross-entropy measures the surprise; gradient descent does the
+    nudging.</p>
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin:16px 0 10px">
+      <span class="chip">because</span><span class="chip">it</span><span class="chip">was</span><span class="chip" style="border-style:dashed">?</span>
+    </div>
+    <div class="bars" style="max-width:420px">
+      <div class="barrow"><span class="blabel">thirsty</span><div class="btrack"><div class="bfill" style="width:61%"></div></div><span class="bnum">61%</span></div>
+      <div class="barrow"><span class="blabel">tired</span><div class="btrack"><div class="bfill" style="width:14%"></div></div><span class="bnum">14%</span></div>
+      <div class="barrow"><span class="blabel">raining</span><div class="btrack"><div class="bfill" style="width:8%"></div></div><span class="bnum">8%</span></div>
+      <div class="barrow"><span class="blabel">cold</span><div class="btrack"><div class="bfill" style="width:6%"></div></div><span class="bnum">6%</span></div>
+      <div class="barrow"><span class="blabel">…</span><div class="btrack"><div class="bfill" style="width:11%"></div></div><span class="bnum">11%</span></div>
+    </div>
+    <p class="small muted" style="margin-bottom:0">Nobody tells the model grammar, or masks, or where
+    rows end. Those are habits that fall out of the game — including, for our model, learning that
+    <span class="mono">"|"</span> ends a row and <span class="mono">&lt;end&gt;</span> means stop.</p>
+  </div>
+
+  <!-- ------------------------------------------------------------ 9 you are here -->
+  <div class="card">
+    <h2>Now you know the words</h2>
+    <dl class="glossary" style="margin:14px 0 22px">
+      <dt>token</dt><dd>one chunk of input: a word, or for us one encoding digit like “6” or “|”.</dd>
+      <dt>vector</dt><dd>a list of numbers; a point in space; similar meanings → nearby points.</dd>
+      <dt>embedding</dt><dd>the vector a token is turned into (learned during training).</dd>
+      <dt>attention</dt><dd>each vector searching the others and mixing in what it finds.</dd>
+      <dt>query / key / value</dt><dd>what I'm looking for / what I offer / what I hand over.</dd>
+      <dt>softmax</dt><dd>turns raw scores into percentages summing to 100.</dd>
+      <dt>head</dt><dd>one parallel attention with its own Q/K/V — ours has 8.</dd>
+      <dt>mask</dt><dd>blocks a token from seeing the future, so it can't peek at answers.</dd>
+      <dt>encoder / decoder</dt><dd>the read-everything half / the write-one-token-at-a-time half.</dd>
+      <dt>cross-attention</dt><dd>the decoder's tokens looking over at the encoder's (or the image's).</dd>
+      <dt>residual / LayerNorm</dt><dd>“keep the old value around” / “keep the numbers in range”.</dd>
+      <dt>logits</dt><dd>the raw scores before softmax — our model makes 11 per step.</dd>
+    </dl>
+    <p><b>Where this leaves us:</b> our Model A is a small decoder (4 layers, masked) that
+    cross-attends to an image and writes encoding digits; Model B is an encoder that reads every gap
+    at once. Lesson 1 puts the theory to work: you watch Model A write a real kolam, token by
+    token.</p>
+    <p style="margin-bottom:0"><a href="lesson-1.html"><b>→ Lesson 1: The loop</b></a>
+    <span class="muted">· and whenever something above felt thin, ask me in the chat — that's what
+    the lessons are for.</span></p>
+  </div>
+
+  <footer class="end">
+    <a href="index.html">← all lessons</a> · written version: <code>docs/model_experiments.md</code> §3–4
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const fmt = x => Math.round(x * 100) + "%";
+
+  /* ---------------- token vectors: fill swatches from data-vec ---------------- */
+  for (const held of document.querySelectorAll(".vec")) {
+    const vals = held.getAttribute("data-vec").split(",").map(Number);
+    held.innerHTML = vals.map(v => {
+      const a = 0.15 + 0.85 * (v / 100);
+      return `<span class="vm" style="background:rgba(232,185,106,${a.toFixed(2)})"></span>`;
+    }).join("");
+  }
+
+  /* ---------------- attention playground ---------------- */
+  const WORDS = ["the", "cat", "drank", "because", "it", "was", "thirsty"];
+  const W = [
+    [0.10, 0.55, 0.10, 0.05, 0.05, 0.08, 0.07],
+    [0.12, 0.18, 0.35, 0.05, 0.06, 0.06, 0.18],
+    [0.10, 0.30, 0.15, 0.12, 0.10, 0.11, 0.12],
+    [0.06, 0.10, 0.28, 0.10, 0.16, 0.10, 0.20],
+    [0.04, 0.58, 0.10, 0.08, 0.06, 0.09, 0.05],
+    [0.05, 0.14, 0.08, 0.07, 0.46, 0.10, 0.10],
+    [0.08, 0.22, 0.20, 0.06, 0.18, 0.16, 0.10]
+  ];
+  const params = new URLSearchParams(location.search);
+  let mode = params.get("mode") === "bert" ? "bert" : "gpt";
+  let q = Math.max(0, Math.min(6, parseInt(params.get("q") || "4", 10))) || 4;   // start on "it"
+
+  function maskedWeights(i) {
+    if (mode === "bert") return W[i].slice();
+    const row = W[i].map((w, j) => j <= i ? w : 0);
+    const s = row.reduce((a, b) => a + b, 0);
+    return row.map(w => w / s);
+  }
+
+  function renderPlay() {
+    $("qtokens").innerHTML = WORDS.map((w, i) =>
+      `<span class="chip${i === q ? " sel" : ""}" data-i="${i}">${w}</span>`).join("");
+
+    const w = maskedWeights(q);
+    $("bars").innerHTML = WORDS.map((word, j) => {
+      const blocked = mode === "gpt" && j > q;
+      const cls = "barrow" + (blocked ? " blocked" : "") + (j === q ? " q" : "");
+      const num = blocked ? "✕" : fmt(w[j]);
+      return `<div class="${cls}" data-i="${j}"><span class="blabel">${word}</span>` +
+             `<div class="btrack"><div class="bfill" style="width:${blocked ? 0 : w[j] * 100}%"></div></div>` +
+             `<span class="bnum">${num}</span></div>`;
+    }).join("");
+
+    let cells = "";
+    for (let i = 0; i < 7; i++)
+      for (let j = 0; j < 7; j++) {
+        const ok = mode === "bert" || j <= i;
+        cells += `<div class="mcell ${ok ? "ok" : "blocked"}${i === q ? " rh" : ""}" data-i="${i}"></div>`;
+      }
+    $("maskgrid").innerHTML = cells;
+
+    const best = w.indexOf(Math.max(...w));
+    const names = ["the", "cat", "drank", "because", "it", "was", "thirsty"];
+    if (mode === "gpt") {
+      $("maskcap").innerHTML = "GPT mode: green cells only. The query “<b>" + names[q] +
+        "</b>” may look at the " + (q + 1) + " tokens up to itself — " + names.slice(0, q + 1).join(", ") +
+        " — and nothing to its right: those words don't exist yet.";
+      $("playcap").innerHTML = "“<b>" + names[q] + "</b>” is the query. In masked mode the blocked " +
+        "weights are removed and the rest re-scale to 100%. It ends up pulling mostly from “" +
+        names[best] + "” (" + fmt(w[best]) + ").";
+    } else {
+      $("maskcap").innerHTML = "BERT mode: every cell is green — each word may look at all 7, " +
+        "before and after itself.";
+      $("playcap").innerHTML = "“<b>" + names[q] + "</b>” is the query. Unmasked, it can compare " +
+        "with every word; its pull lands strongest on “" + names[best] + "” (" + fmt(w[best]) +
+        "), because that's the word it is really about.";
+    }
+
+    for (const el of document.querySelectorAll("#qtokens .chip"))
+      el.onclick = () => { q = +el.dataset.i; renderPlay(); };
+    for (const el of document.querySelectorAll("#maskgrid .mcell"))
+      el.onclick = () => { q = +el.dataset.i; renderPlay(); };
+  }
+
+  $("mode-bert").onclick = () => {
+    mode = "bert";
+    $("mode-bert").classList.add("active"); $("mode-gpt").classList.remove("active");
+    renderPlay();
+  };
+  $("mode-gpt").onclick = () => {
+    mode = "gpt";
+    $("mode-gpt").classList.add("active"); $("mode-bert").classList.remove("active");
+    renderPlay();
+  };
+  $("mode-" + mode).classList.add("active");
+  $("mode-" + (mode === "bert" ? "gpt" : "bert")).classList.remove("active");
+  renderPlay();
+
+  /* ---------------- positions demo ---------------- */
+  const S1 = ["dog", "bites", "man"], S2 = ["man", "bites", "dog"];
+  let posOn = false;
+
+  function hue(word) {
+    let h = 0;
+    for (const c of word) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return h;
+  }
+  function swatches(word, pos) {
+    const h = (hue(word) + (posOn ? pos * 47 : 0)) % 360;
+    let out = "";
+    for (let k = 0; k < 4; k++) {
+      const l = 38 + k * 9;
+      out += `<span class="sw" style="background:hsl(${h},45%,${l}%)"></span>`;
+    }
+    return out;
+  }
+  function renderPos() {
+    for (const [id, S] of [["posrow1", S1], ["posrow2", S2]]) {
+      $(id).innerHTML = S.map((word, i) =>
+        `<span class="pword"><span class="chip">${word}</span><span class="swatches">${swatches(word, i)}</span></span>`).join("");
+    }
+    $("postoggle").textContent = posOn ? "remove position codes" : "add position codes";
+    $("postoggle").classList.toggle("playing", posOn);
+    $("posstatus").innerHTML = posOn
+      ? "Now “dog” in slot 1 has different numbers than “dog” in slot 3, and same for “man” — the two sentences produce <b>different</b> vectors, so the model can tell who bit whom."
+      : "The swatches for each word are <b>identical in both rows</b> — the model sees only the bag {dog, bites, man}. It cannot tell who bit whom. Watch “dog” and “man” swap colours when you switch positions on.";
+  }
+  $("postoggle").onclick = () => { posOn = !posOn; renderPos(); };
+  renderPos();
+})();
+</script>
+</body>
+</html>

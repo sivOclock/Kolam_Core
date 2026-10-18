@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — The loop · Transformers from our kolam code</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .mchip { fill: #20242f; stroke: var(--grey); stroke-width: 1.4; }
+  .mchip.hl { stroke: var(--amber); }
+  .mchiptext { font-family: var(--mono); font-size: 15px; fill: var(--ink); }
+  .mhead { font-size: 12.5px; fill: var(--muted); }
+  .mar { fill: none; stroke-width: 1.6; }
+  .ghost { fill: #20242f; stroke: var(--red); stroke-width: 1.4; stroke-dasharray: 4 4; }
+  .xmark { stroke: var(--red); stroke-width: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="crumb">
+    <a href="index.html">← all lessons</a>
+    <a href="lesson-0.html">← Lesson 0</a>
+    <span class="pill">Lesson 1 of 8</span>
+    <span class="soon">Lesson 2 soon</span>
+  </div>
+
+  <h1>Lesson 1 · The loop</h1>
+  <p class="subtitle">How Model A (“the writer”) turns an image into an encoding, one token at a
+  time — watched on a real 2×2 kolam, with the repo's own renderer.</p>
+
+  <!-- ---------------------------------------------------------------- diagram -->
+  <div class="card">
+    <h2>The machine at a glance</h2>
+    <p class="small muted" style="margin-top:4px">Two inputs, one output, and a loop that repeats
+    until the model says it is done.</p>
+
+    <svg class="diagram" viewBox="0 0 880 400" role="img" aria-label="the decoder loop">
+      <defs>
+        <marker id="ah1" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#7c86a0"/>
+        </marker>
+      </defs>
+
+      <!-- top row: image -> cnn -> memory -->
+      <rect class="bx" x="30" y="24" width="110" height="64" rx="10"/>
+      <text class="t" x="85" y="52" text-anchor="middle">image</text>
+      <text class="n" x="85" y="72" text-anchor="middle">384 × 384</text>
+
+      <line class="ar" x1="140" y1="56" x2="172" y2="56" marker-end="url(#ah1)"/>
+
+      <rect class="bx" x="176" y="24" width="138" height="64" rx="10"/>
+      <text class="t" x="245" y="52" text-anchor="middle">CNN</text>
+      <text class="n" x="245" y="72" text-anchor="middle">“the eye”</text>
+
+      <line class="ar" x1="314" y1="56" x2="344" y2="56" marker-end="url(#ah1)"/>
+
+      <rect class="bx" x="348" y="24" width="176" height="64" rx="10"/>
+      <text class="t" x="436" y="52" text-anchor="middle">memory</text>
+      <text class="n" x="436" y="72" text-anchor="middle">576 patch vectors</text>
+
+      <!-- memory down into the decoder -->
+      <polyline class="ar" points="436,88 436,118 560,118 560,164" marker-end="url(#ah1)"/>
+      <text class="n" x="572" y="122" text-anchor="start">Q2 · what does the image show here?</text>
+
+      <!-- tokens strip -->
+      <text class="n" x="135" y="185" text-anchor="middle">tokens written so far</text>
+      <rect class="bx" x="30" y="195" width="210" height="62" rx="10"/>
+      <text class="m" x="135" y="231" text-anchor="middle">&lt;bos&gt; 0 0 | 6 …</text>
+
+      <!-- strip into decoder -->
+      <line class="ar" x1="240" y1="226" x2="296" y2="226" marker-end="url(#ah1)"/>
+      <text class="n" x="269" y="214" text-anchor="middle">Q1</text>
+      <text class="n" x="269" y="246" text-anchor="middle">looks</text>
+      <text class="n" x="269" y="258" text-anchor="middle">back</text>
+
+      <!-- decoder -->
+      <rect class="bx" x="300" y="168" width="330" height="140" rx="10"/>
+      <text class="t" x="465" y="196" text-anchor="middle">decoder · 4 identical rounds</text>
+      <text x="318" y="228" style="font-size:13.5px">① self-attention — reads back (Q1)</text>
+      <text x="318" y="254" style="font-size:13.5px">② cross-attention — reads the image (Q2)</text>
+      <text x="318" y="280" style="font-size:13.5px">③ MLP — thinks, per position</text>
+
+      <!-- decoder -> scores -->
+      <line class="ar" x1="630" y1="238" x2="660" y2="238" marker-end="url(#ah1)"/>
+
+      <rect class="bx" x="664" y="195" width="186" height="86" rx="10"/>
+      <text class="t" x="757" y="222" text-anchor="middle">one score per token</text>
+      <text class="n" x="757" y="244" text-anchor="middle">→ softmax →</text>
+      <text class="n" x="757" y="266" text-anchor="middle">pick the best allowed</text>
+
+      <!-- the loop back -->
+      <polyline class="ar" points="757,281 757,352 135,352 135,261" marker-end="url(#ah1)"/>
+      <text class="n" x="446" y="344" text-anchor="middle">append the chosen token, then run the decoder again — stop at &lt;end&gt;</text>
+    </svg>
+
+    <p class="small" style="margin-bottom:0">
+      That loop is the whole of Model A. Everything else in this lesson zooms into one box of it —
+      and later lessons open <b>attention</b> (box ②), the <b>block</b> (all three), <b>training</b>,
+      and <b>Model B</b>, which keeps the same attention but skips the loop entirely.
+    </p>
+  </div>
+
+  <!-- ---------------------------------------------------------------- two questions -->
+  <div class="card">
+    <h2>Every token asks two questions</h2>
+    <p class="small muted" style="margin-top:4px">The decoder is a tiny 11-word language model
+    (“0”–“8”, “|”, &lt;end&gt;) that also gets to look at a picture. At each step, one token is written
+    using two looks.</p>
+    <div class="duo" style="margin-top:16px">
+
+      <div class="card">
+        <h3>① What have I written so far?</h3>
+        <svg class="diagram" viewBox="0 0 340 132" role="img" aria-label="masked self-attention">
+          <defs>
+            <marker id="cah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#56c478"/>
+            </marker>
+          </defs>
+          <text class="mhead" x="14" y="30">tokens already written</text>
+          <rect class="mchip" x="14" y="48" width="40" height="30" rx="7"/>
+          <text class="mchiptext" x="34" y="63" text-anchor="middle" dominant-baseline="central">0</text>
+          <rect class="mchip" x="60" y="48" width="40" height="30" rx="7"/>
+          <text class="mchiptext" x="80" y="63" text-anchor="middle" dominant-baseline="central">0</text>
+          <rect class="mchip" x="106" y="48" width="40" height="30" rx="7"/>
+          <text class="mchiptext" x="126" y="63" text-anchor="middle" dominant-baseline="central">6</text>
+          <rect class="mchip" x="152" y="48" width="40" height="30" rx="7"/>
+          <text class="mchiptext" x="172" y="63" text-anchor="middle" dominant-baseline="central">1</text>
+          <rect class="mchip hl" x="198" y="48" width="40" height="30" rx="7"/>
+          <text class="mchiptext" x="218" y="63" text-anchor="middle" dominant-baseline="central">▊</text>
+          <rect class="ghost" x="248" y="48" width="40" height="30" rx="7"/>
+          <line class="xmark" x1="258" y1="56" x2="278" y2="70"/>
+          <line class="xmark" x1="278" y1="56" x2="258" y2="70"/>
+
+          <path class="mar" style="stroke:var(--green)" marker-end="url(#cah)" d="M218,48 C218,18 34,18 34,44"/>
+          <path class="mar" style="stroke:var(--green)" marker-end="url(#cah)" d="M218,48 C218,24 80,24 80,44"/>
+          <path class="mar" style="stroke:var(--green)" marker-end="url(#cah)" d="M218,48 C218,30 126,30 126,44"/>
+          <path class="mar" style="stroke:var(--green)" marker-end="url(#cah)" d="M218,48 C218,36 172,36 172,44"/>
+
+          <text class="mhead" x="218" y="98" text-anchor="middle">now being written</text>
+          <text class="mhead" x="268" y="30" text-anchor="middle" style="fill:var(--red)">not allowed (yet)</text>
+        </svg>
+        <p class="small">Each token can look at the tokens <b>before</b> it — nothing further right.
+        A <b>mask</b> blocks the future, so a token can never peek at an answer it hasn't written.
+        This is plain GPT behaviour.</p>
+      </div>
+
+      <div class="card">
+        <h3>② What does the image show under me?</h3>
+        <svg class="diagram" viewBox="0 0 340 142" role="img" aria-label="cross-attention">
+          <defs>
+            <marker id="aah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#e8b96a"/>
+            </marker>
+          </defs>
+          <rect class="mchip" x="30" y="52" width="40" height="30" rx="7" style="stroke:var(--green)"/>
+          <text class="mchiptext" x="50" y="67" text-anchor="middle" dominant-baseline="central">6</text>
+          <text class="mhead" x="50" y="102" text-anchor="middle">being written</text>
+
+          <g>
+            <rect class="mchip" x="118" y="14" width="24" height="24"/>
+            <rect class="mchip" x="146" y="14" width="24" height="24"/>
+            <rect class="mchip" x="174" y="14" width="24" height="24"/>
+            <rect class="mchip" x="202" y="14" width="24" height="24"/>
+            <rect class="mchip" x="230" y="14" width="24" height="24"/>
+            <rect class="mchip" x="258" y="14" width="24" height="24"/>
+            <rect class="mchip" x="286" y="14" width="24" height="24"/>
+            <rect class="mchip" x="118" y="42" width="24" height="24"/>
+            <rect class="mchip" x="146" y="42" width="24" height="24"/>
+            <rect class="mchip" x="174" y="42" width="24" height="24"/>
+            <rect class="mchip" x="202" y="42" width="24" height="24"/>
+            <rect class="mchip" x="230" y="42" width="24" height="24"/>
+            <rect class="mchip" x="258" y="42" width="24" height="24"/>
+            <rect class="mchip" x="286" y="42" width="24" height="24"/>
+            <rect class="mchip" x="118" y="70" width="24" height="24"/>
+            <rect class="mchip" x="146" y="70" width="24" height="24"/>
+            <rect class="mchip" x="174" y="70" width="24" height="24"/>
+            <rect class="mchip" x="202" y="70" width="24" height="24"/>
+            <rect x="230" y="70" width="24" height="24" rx="7" fill="rgba(232,185,106,.28)" stroke="#e8b96a" stroke-width="1.6"/>
+            <rect class="mchip" x="258" y="70" width="24" height="24"/>
+            <rect class="mchip" x="286" y="70" width="24" height="24"/>
+            <rect class="mchip" x="118" y="98" width="24" height="24"/>
+            <rect class="mchip" x="146" y="98" width="24" height="24"/>
+            <rect class="mchip" x="174" y="98" width="24" height="24"/>
+            <rect class="mchip" x="202" y="98" width="24" height="24"/>
+            <rect class="mchip" x="230" y="98" width="24" height="24"/>
+            <rect class="mchip" x="258" y="98" width="24" height="24"/>
+            <rect class="mchip" x="286" y="98" width="24" height="24"/>
+          </g>
+          <path class="mar" style="stroke:var(--amber)" marker-end="url(#aah)" d="M72,64 C110,64 160,78 224,81"/>
+          <text class="mhead" x="216" y="136" text-anchor="middle">the image, seen as patches</text>
+        </svg>
+        <p class="small">Each position knows <b>where in the encoding it is</b> (row, column), so it can
+        search the image patches under its own gap: <i>is there a crossing here? a horn tip? a wall?</i></p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------------- stepper -->
+  <div class="card">
+    <h2>Watch it write a real kolam</h2>
+    <p class="small muted" style="margin-top:4px">
+      This is Model A's loop replayed on a genuine 2×2 label. Press <b>next token</b> (or the →
+      key): the ring shows the gap being decided, chips get appended, badges appear on the picture.
+    </p>
+
+    <div class="stepper">
+      <div>
+        <div class="frame">
+          <img src="assets/lesson-1.png" alt="the example kolam: a crossing-loop square with a crescent horn">
+          <svg id="overlay" viewBox="0 0 512 512"></svg>
+        </div>
+        <div class="legend">
+          <span><i style="border-color:#8a93a6"></i> 0 wall</span>
+          <span><i style="border-color:#ec6250"></i> 1 cross</span>
+          <span><i style="border-color:#4a9ee8"></i> 2 tube</span>
+          <span><i style="border-color:#56c478"></i> 3–8 horn</span>
+          <span class="muted">ring colour = the digit's kind</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="strip" id="strip"></div>
+        <div class="counter" id="counter"></div>
+        <div class="caption" id="caption"></div>
+        <div class="controls">
+          <button id="prev">◂ back</button>
+          <button class="primary" id="next">next token ▸</button>
+          <button id="play">▶ auto</button>
+          <button id="reset">↺ reset</button>
+        </div>
+        <p class="small muted" style="margin-bottom:0">
+          Honest note: this replay <i>already knows</i> the true tokens — it shows the <b>loop</b>, not
+          the prediction. Learning to predict them is what training does (lesson 5), and the
+          “allowed” rules that stop impossible moves are lesson 6.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------------- takeaways -->
+  <div class="card">
+    <h2>What you just saw</h2>
+    <ul style="margin:8px 0 0; padding-left:22px">
+      <li>The encoding is written <b>left to right, one token at a time</b> — a tiny language of
+        11 tokens: <code>0</code>–<code>8</code>, <code>|</code> (end of row), <code>&lt;end&gt;</code>.</li>
+      <li>Each token is one decision: <b>look back</b> at what's written + <b>look at the image</b>
+        under its gap, then a linear layer scores all 11 tokens and one is picked.</li>
+      <li><code>|</code> and <code>&lt;end&gt;</code> were <b>learned from data</b>, not programmed:
+        the model figured out where rows end and where to stop.</li>
+      <li>At reading time it never sees the answer — but <i>training</i> shows it every answer at
+        once. That trick (the causal mask) is lesson 5.</li>
+    </ul>
+
+    <h3 style="margin-top:22px">Where this lives in the code</h3>
+    <ul class="small" style="margin:8px 0 0; padding-left:22px">
+      <li><code>token_slots()</code> — <code>model.py:85</code> — reads (row, column) off the tokens written so far.</li>
+      <li><code>SeqModel.memory()</code> — <code>model.py:111</code> — CNN → 576 patch vectors.</li>
+      <li><code>SeqModel.logits()</code> — <code>model.py:116</code> — the decoder call; the causal mask is <code>model.py:121</code>.</li>
+      <li><code>SeqModel.predict()</code> — <code>model.py:131</code> — the loop you just watched, with <code>allowed_next</code>.</li>
+    </ul>
+
+    <p style="margin-top:22px">
+      <b>Next: Lesson 2 — attention by hand.</b> We'll open box ① and ② and compute
+      Q, K, V and the softmax with pocket-sized numbers, until “attention” stops being a magic word.
+      <span class="muted">Ask in the chat to build it.</span>
+    </p>
+  </div>
+
+  <footer class="end">
+    <a href="index.html">← all lessons</a> · written version: <code>docs/model_experiments.md</code> §4
+  </footer>
+
+</div>
+
+<script src="assets/lesson-1.js"></script>
+<script>
+(function () {
+  const D = window.LESSON1;
+  const N = D.tokens.length;
+  const q = parseInt(new URLSearchParams(location.search).get("pos") || "0", 10);
+  let pos = Number.isFinite(q) ? Math.max(0, Math.min(N, q)) : 0;
+  let timer = null;
+
+  const $ = id => document.getElementById(id);
+  const DCOL = d => d === 0 ? "#8a93a6" : d === 1 ? "#ec6250" : d === 2 ? "#4a9ee8" : "#56c478";
+  const MEAN = {
+    "0": "a wall — nothing crosses this gap",
+    "1": "a cross — two lines swap over here",
+    "2": "a tube — two lines run through side by side",
+    "3": "a plain horn pointing E or S",
+    "4": "a left-curling horn pointing E or S",
+    "5": "a right-curling horn pointing E or S",
+    "6": "a plain horn pointing W or N",
+    "7": "a left-curling horn pointing W or N",
+    "8": "a right-curling horn pointing W or N"
+  };
+  const NOTES = {
+    3: "You can see it in the picture: the crescent on the left, growing out of the top-left dot.",
+    4: "You can see it in the picture: the ✕ where the two strands swap, between the top two dots."
+  };
+
+  const gapOf = i => D.tokmap[i] >= 0 ? D.gaps[D.tokmap[i]] : null;
+  const rowOf = i => D.tokens.slice(0, i).filter(t => t === "|").length;
+
+  function gapDesc(g) {
+    const R = D.rows, C = D.cols;
+    if (g.li % 2 === 0) {
+      if (g.li === 0)     return "a top-border gap (above the first dot row)";
+      if (g.li === 2 * R) return "a bottom-border gap (below the last dot row)";
+      return `an up/down gap between dot rows ${g.li / 2} and ${g.li / 2 + 1}`;
+    }
+    const dr = (g.li + 1) / 2;
+    if (g.lj === 0)     return `the left-border gap of dot row ${dr}`;
+    if (g.lj === 2 * C) return `the right-border gap of dot row ${dr}`;
+    return `a left/right gap inside dot row ${dr} (between two dots)`;
+  }
+
+  function facing(g, d) {
+    if (d < 3) return "";
+    const dir = d <= 5 ? (g.li % 2 ? "E" : "S") : (g.li % 2 ? "W" : "N");
+    return ` — on this gap that means pointing ${dir}`;
+  }
+
+  function chipHTML(t, i) {
+    if (t === "|") return `<span class="chip c-bar">|</span>`;
+    if (t === "<end>") return `<span class="chip c-end">&lt;end&gt;</span>`;
+    const hot = i === pos - 1 ? " hot" : "";
+    return `<span class="chip${hot}" style="--c:${DCOL(gapOf(i).d)}">${t}</span>`;
+  }
+
+  function captionHTML() {
+    if (pos >= N) {
+      return `<div class="cap-top">done</div>
+        <div class="cap-big">All ${N} tokens written.</div>
+        <div class="cap-where">The encoding: <span class="mono">${D.enc.join(" | ")}</span></div>
+        <div class="cap-sub" style="margin-top:8px">Reset ↺ to watch it again, or read on below.</div>`;
+    }
+    const t = D.tokens[pos], n = pos + 1;
+
+    if (t === "|") {
+      const bars = D.tokens.slice(0, pos).filter(x => x === "|").length;
+      let k = pos - 1, len = 0;
+      while (k >= 0 && D.tokens[k] !== "|") { len++; k--; }
+      return `<div class="cap-top">token ${n} of ${N}</div>
+        <div class="cap-big"><span class="chip c-bar">|</span>“end of this row”</div>
+        <div class="cap-where">Row ${bars + 1} just got its ${len} digits. Rows alternate ${D.cols} and
+        ${D.cols + 1} digits, and “|” is how the model keeps count — its own newline symbol.</div>`;
+    }
+    if (t === "<end>") {
+      return `<div class="cap-top">token ${n} of ${N}</div>
+        <div class="cap-big"><span class="chip c-end">&lt;end&gt;</span>“stop”</div>
+        <div class="cap-where">Every gap has its digit, so the encoding is complete. Nobody programmed
+        the stop in — the model learned it from the data, like every other token.</div>`;
+    }
+
+    const g = gapOf(pos);
+    const back = pos === 0 ? "① has only 〈bos〉 behind it — nothing to look back at yet"
+                           : `① looks back at the ${pos} tokens already written`;
+    return `<div class="cap-top">token ${n} of ${N} · encoding row ${rowOf(pos) + 1}</div>
+      <div class="cap-big"><span class="chip" style="--c:${DCOL(g.d)}">${t}</span>${MEAN[t]}${facing(g, g.d)}</div>
+      <div class="cap-where">It is being written on ${gapDesc(g)}.</div>
+      ${NOTES[pos] ? `<div class="cap-note">${NOTES[pos]}</div>` : ""}
+      <div class="cap-q">${back} · ② looks at the image under this gap · writes “${t}”</div>`;
+  }
+
+  function render() {
+    let s = "";
+    for (const g of D.gaps) s += `<circle class="gapdot" cx="${g.x}" cy="${g.y}" r="3"/>`;
+    for (let i = 0; i < Math.min(pos, N); i++) {
+      const g = gapOf(i);
+      if (!g) continue;
+      const c = DCOL(g.d);
+      s += `<g><circle cx="${g.x}" cy="${g.y}" r="11" fill="#1e222c" stroke="${c}" stroke-width="2"/>
+        <text x="${g.x}" y="${g.y + 0.5}" text-anchor="middle" dominant-baseline="central"
+        font-family="ui-monospace, monospace" font-size="13" fill="${c}">${g.d}</text></g>`;
+    }
+    const g = pos < N ? gapOf(pos) : null;
+    if (g) s += `<circle class="ring" cx="${g.x}" cy="${g.y}" r="16" style="stroke:${DCOL(g.d)}"/>`;
+    $("overlay").innerHTML = s;
+
+    let st = "";
+    for (let i = 0; i < pos; i++) st += chipHTML(D.tokens[i], i);
+    if (pos < N) st += `<span class="chip cursor"></span>`;
+    $("strip").innerHTML = st;
+
+    $("counter").textContent = `${pos} of ${N} tokens written`;
+    $("caption").innerHTML = captionHTML();
+    $("prev").disabled = pos === 0;
+    $("next").disabled = pos === N;
+  }
+
+  function go(d) { pos = Math.max(0, Math.min(N, pos + d)); render(); }
+  function stopPlay() {
+    if (!timer) return;
+    clearInterval(timer); timer = null;
+    $("play").classList.remove("playing");
+    $("play").textContent = "▶ auto";
+  }
+
+  $("next").onclick = () => { stopPlay(); go(1); };
+  $("prev").onclick = () => { stopPlay(); go(-1); };
+  $("reset").onclick = () => { stopPlay(); pos = 0; render(); };
+  $("play").onclick = () => {
+    if (timer) return stopPlay();
+    $("play").classList.add("playing");
+    $("play").textContent = "❚❚ pause";
+    timer = setInterval(() => { pos >= N ? stopPlay() : go(1); }, 1200);
+  };
+  document.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); stopPlay(); go(1); }
+    else if (e.key === "ArrowLeft") { stopPlay(); go(-1); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -61,5 +61,3 @@ kolam_gen/target/
 # Training runs
 runs/
 
-# Visual lessons (local only, one HTML page per lesson)
-lessons/
