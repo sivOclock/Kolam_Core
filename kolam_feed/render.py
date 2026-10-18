@@ -120,9 +120,10 @@ def _jittered(strokes, jitter: float, seed: int):
     return [[move(p) for p in s] for s in strokes]
 
 
-def render_kolam(c: Compiled, style: Style | None = None, coloured: bool = False) -> Image.Image:
+def render_kolam(c: Compiled, style: Style | None = None, coloured: bool = False, frame: bool = False):
     """The kolam image. coloured=True paints each part with the brush that made it. Only dots some
-    relation uses are drawn, and the frame grows to fit a crescent that points off the grid."""
+    relation uses are drawn, and the frame grows to fit a crescent that points off the grid.
+    frame=True returns (image, M): M (3x3) maps a lattice point (lj, li, 1) to its pixel (x, y, 1)."""
     style = style or Style()
     rows, cols = c.config.rows, c.config.cols
     shown, owners = drawn(c)
@@ -148,4 +149,8 @@ def render_kolam(c: Compiled, style: Style | None = None, coloured: bool = False
             r = w / 2
             for x, y in cv.px(seg[[0, -1]]):
                 cv.draw.ellipse([x - r, y - r, x + r, y + r], fill=colr)
-    return cv.finish()
+    if not frame:
+        return cv.finish()
+    k = 1 / style.supersample
+    M = np.array([[cv.scale * k, 0, cv.ox * k], [0, cv.scale * k, cv.oy * k], [0, 0, 1]])
+    return cv.finish(), M

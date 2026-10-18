@@ -10,6 +10,7 @@ with a fresh random style per (seed, epoch, index), and check it independently o
 (geometry.check_geometry, compiler.decode, verify). Constrained decoding for a sequence model:
 encoding.allowed_next.
 """
+from .augment import Augment, transform, turn
 from .compiler import Compiled, compile_hypergraph, decode, observe
 from .data import KolamDataset, collate, load_encodings, target_text
 from .encoding import allowed_next, from_encoding, from_tokens, to_encoding, to_tokens
@@ -19,7 +20,7 @@ from .render import Style, random_style, render_kolam
 from .verify import verify
 
 __all__ = [
-    "Compiled", "Hypergraph", "KolamDataset", "KolamError", "Relation", "Style", "allowed_next", "check_geometry",
+    "Augment", "Compiled", "Hypergraph", "KolamDataset", "KolamError", "Relation", "Style", "allowed_next", "check_geometry",
     "collate", "compile_hypergraph", "decode", "drawn", "from_encoding", "from_tokens", "load_encodings", "observe",
-    "random_style", "render_kolam", "target_text", "to_encoding", "to_tokens", "verify",
+    "random_style", "render_kolam", "target_text", "to_encoding", "to_tokens", "transform", "turn", "verify",
 ]

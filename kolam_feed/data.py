@@ -6,8 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
+from .augment import Augment, turn
 from .compiler import compile_hypergraph
-from .encoding import VOCAB, from_encoding, to_tokens
+from .encoding import VOCAB, from_encoding, to_encoding, to_tokens
 from .render import Style, random_style, render_kolam
 
 
@@ -42,17 +43,21 @@ def collate(items: list[dict]) -> dict:
 
 
 class KolamDataset:
-    """Map-style dataset for torch.utils.data.DataLoader: item i is kolam i rendered in a random style
-    drawn from (seed, epoch, i). Call set_epoch(e) before each epoch for new looks (with
-    persistent_workers=True the workers keep their own copy, so leave that off). With augment=False
-    every item is drawn in the plain default style. `transform(item) -> anything` runs last, e.g. to
+    """Map-style dataset for torch.utils.data.DataLoader: item i is kolam i, augmented from
+    (seed, epoch, i) (kolam_feed/augment.py): a random style when drawn (style=True), then maybe a
+    turn/mirror (the label turned with it) and image changes from `augment` (a preset name: "none",
+    "light", "photo", or an Augment). Call set_epoch(e) before each epoch for new looks (with
+    persistent_workers=True the workers keep their own copy, so leave that off). style=False and
+    augment="none" give the plain default picture. `transform(item) -> anything` runs last, e.g. to
     apply an image processor and tokenizer."""
 
     vocab = VOCAB
 
-    def __init__(self, src: str | Path, size: int = 448, seed: int = 0, augment: bool = True, transform=None):
+    def __init__(self, src: str | Path, size: int = 448, seed: int = 0, style: bool = True,
+                 augment: str | Augment = "light", transform=None):
         self.encodings, self.systems = load_encodings(src)
-        self.size, self.seed, self.augment, self.epoch = size, seed, augment, 0
+        self.size, self.seed, self.style, self.epoch = size, seed, style, 0
+        self.aug = Augment.preset(augment) if isinstance(augment, str) else augment
         self.transform = transform
 
     def set_epoch(self, epoch: int) -> None:
@@ -61,15 +66,23 @@ class KolamDataset:
     def __len__(self) -> int:
         return len(self.encodings)
 
-    def render(self, i: int):
+    def render(self, i: int) -> dict:
+        """Kolam i as {image, encoding, turn, H, M}: H maps the clean render's pixels to the image's,
+        M maps a lattice point (lj, li, 1) to its pixel in the image (x, y, 1)."""
         enc = self.encodings[i].split("|")
-        c = compile_hypergraph(from_encoding(enc), check=False)
+        h = from_encoding(enc)
         rng = np.random.default_rng([self.seed, self.epoch, i])
-        style = random_style(rng, self.size) if self.augment else Style(size=self.size)
-        return render_kolam(c, style), enc
+        op = "id"
+        if rng.random() < self.aug.p_turn:
+            h, op = turn(h, rng)
+            enc = to_encoding(h)
+        style = random_style(rng, self.size) if self.style else Style(size=self.size)
+        img, M = render_kolam(compile_hypergraph(h, check=False), style, frame=True)
+        img, H = self.aug.image(img, rng, style.bg, style.ink)
+        return {"image": img, "encoding": enc, "turn": op, "H": H, "M": H @ M}
 
     def __getitem__(self, i: int) -> dict:
-        img, enc = self.render(i)
-        item = {"image": img, "encoding": enc, "text": target_text(enc), "tokens": to_tokens(enc),
-                "system": self.systems[i]}
+        r = self.render(i)
+        item = {"image": r["image"], "encoding": r["encoding"], "text": target_text(r["encoding"]),
+                "tokens": to_tokens(r["encoding"]), "system": self.systems[i], "turn": r["turn"], "H": r["H"], "M": r["M"]}
         return self.transform(item) if self.transform else item
