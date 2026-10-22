@@ -14,6 +14,7 @@ rejects (the kolam head on held-out kolams / non-kolams). Live view: python -m k
 """
 from __future__ import annotations
 
+import copy
 import json
 import math
 import os
@@ -68,11 +69,13 @@ def to_device(b: dict, dev) -> dict:
     return {k: v.to(dev, non_blocking=True) if torch.is_tensor(v) else v for k, v in b.items()}
 
 
-def split(ds: KolamDataset, max_dots: int | None, min_dots: int | None = None) -> tuple[list[int], list[int]]:
-    keep = [i for i, e in enumerate(ds.encodings)
-            if (max_dots is None or max(grid_size(e.split("|"))) <= max_dots)
-            and (min_dots is None or max(grid_size(e.split("|"))) >= min_dots)]
-    return [i for i in keep if i % 100], [i for i in keep if i % 100 == 0]
+def split(ds: KolamDataset, max_dots: int | None, min_dots: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Train / val kolam indices (every 100th is val), as int arrays: DataLoader workers share an array,
+    while a list of millions of ints gets copied into each of them (and ran a 2M-kolam run out of RAM)."""
+    keep = np.array([i for i, e in enumerate(ds.encodings)
+                     if (max_dots is None or max(grid_size(e.split("|"))) <= max_dots)
+                     and (min_dots is None or max(grid_size(e.split("|"))) >= min_dots)], np.int64)
+    return keep[keep % 100 != 0], keep[keep % 100 == 0]
 
 
 def score(pred: list[list[str]], true: list[list[str]]) -> Counter:
@@ -178,10 +181,25 @@ def _device(name: str):
     return torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
 
-def _loader(ds, idx, a, shuffle):
-    return DataLoader(Subset(ds, idx), batch_size=a.batch, shuffle=shuffle, num_workers=a.workers,
+def _loader(ds, idx, a, shuffle, workers: int | None = None):
+    """One batch queued per worker (prefetch 1): each queued batch of 384 px images is ~40 MB of shared
+    memory, which counts on a small-RAM box (WSL's 7.7 GB)."""
+    n = a.workers if workers is None else workers
+    return DataLoader(Subset(ds, idx), batch_size=a.batch, shuffle=shuffle, num_workers=n,
                       collate_fn=batch_items, pin_memory=True, drop_last=shuffle,
-                      persistent_workers=False)
+                      persistent_workers=False, prefetch_factor=1 if n else None)
+
+
+def _give_back_memory() -> None:
+    """Return what loading millions of kolams freed to the OS before the workers fork, so they don't
+    each start with it (glibc keeps freed heap otherwise)."""
+    import ctypes
+    import gc
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except OSError:
+        pass
 
 
 def train(a) -> None:
@@ -212,15 +230,16 @@ def train(a) -> None:
     print(f"{a.model}: {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M params, {len(tr)} train / "
           f"{len(va)} val kolams, grids up to {cfg['max_rows']}x{cfg['max_cols']}, on {dev}")
     scaler = torch.amp.GradScaler(enabled=dev.type == "cuda")
-    val = _loader(KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed + 1, transform=to_item,
-                               photo_floors=floors, p_photo_floor=a.photo_floor), va, a, False)
+    vds = copy.copy(ds)                                               # same kolams (shared, not loaded again),
+    vds.seed = a.seed + 1                                             # its own looks
+    val = _loader(vds, va, a, False, workers=min(2, a.workers))
     real = real_photos(a.real_kolams, a.size) if a.real_kolams else None
     n_neg = round(a.batch * a.not_kolam_share)
     neg_ds, neg_val, neg_it = None, None, iter(())
     if n_neg:                                                         # non-kolams for the kolam head
         neg_ds = NotKolamDataset(a.not_kolam, a.size, a.seed, a.aug)
         nv = NotKolamDataset(a.not_kolam, a.size, a.seed + 1, a.aug, split="val")
-        neg_val = DataLoader(nv, batch_size=a.batch, num_workers=a.workers // 4, collate_fn=neg_images)
+        neg_val = DataLoader(nv, batch_size=a.batch, num_workers=min(2, a.workers // 4), collate_fn=neg_images)
         print(f"not-kolams: {n_neg} per batch, {len(neg_ds.files)} photos" + (f" from {a.not_kolam}" if a.not_kolam else ""))
 
     def next_neg(epoch):
@@ -245,6 +264,7 @@ def train(a) -> None:
 
     if step:
         print(f"resumed from {ck} at step {step}", flush=True)
+    _give_back_memory()
     t0, step0 = time.time(), step
     while step < a.steps:
         ds.set_epoch(epoch)
@@ -277,7 +297,7 @@ def train(a) -> None:
                 print(json.dumps(r), flush=True)
                 log.write(json.dumps(r) + "\n")
                 log.flush()
-                if look:
+                if len(look):
                     samples(model, val.dataset.dataset, look, dev, out, step)
                 if r["val"]["exact"] > best:                          # keep only last.pt and the best so far
                     best = r["val"]["exact"]
