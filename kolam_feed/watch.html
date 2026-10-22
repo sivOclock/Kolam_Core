@@ -211,11 +211,13 @@ function spark(svg, vals, max, color) {
 const ema = (pts, k = 0.15) => { let m; return pts.map(([x, y]) => [x, (m = m == null ? y : m + k * (y - m))]) }
 
 // ---------------------------------------------------------------- training log
-let lastLogLen = 0, lastChange = Date.now(), cache = { train: [], val: [] }
+let lastLogLen = 0, lastChange = Date.now(), cache = { train: [], val: [] }, generating = false
 
 async function pollLog() {
   let text
-  try { text = await (await fetch('log.jsonl?t=' + Date.now())).text() } catch { return setPill('stalled', 'no connection') }
+  let res
+  try { res = await fetch('log.jsonl?t=' + Date.now()) } catch { return setPill('stalled', 'no connection') }
+  text = res.ok ? await res.text() : ''          // no log yet (404) = not started
   if (text.length !== lastLogLen) (lastLogLen = text.length), (lastChange = Date.now())
   const rows = text.trim().split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
   // a resumed run appends to the same log: keep the last record for every step
@@ -237,7 +239,18 @@ function tile(label, value, sub = '', cls = '') {
 function render() {
   const { train, val } = cache
   const last = train[train.length - 1]
-  if (!last) return
+  if (!last) {                                   // no step yet: say why instead of empty charts
+    const why = generating ? 'making training data (kolam_gen) — charts start with the first training step'
+                           : 'waiting for the first training step (loading data, starting workers)'
+    setPill('live', generating ? 'making training data' : 'starting')
+    $('prog').textContent = why
+    for (const [id, msg] of [['loss', why], ['acc', 'appears at the first eval']]) {
+      const svg = $(id), b = svg.getBoundingClientRect()
+      svg.setAttribute('viewBox', `0 0 ${Math.max(b.width, 50)} ${Math.max(b.height, 40)}`)
+      svg.innerHTML = `<text x="${b.width / 2}" y="${b.height / 2}" text-anchor="middle" style="font-size:14px;fill:var(--dim)">${msg}</text>`
+    }
+    return
+  }
   const [s, n] = String(last.step).split('/').map(Number)
   const done = s >= n && val.length && val[val.length - 1].step >= n
   if (done) setPill('done', 'finished')
@@ -360,6 +373,7 @@ async function pollStats() {
   let s
   try { s = await (await fetch('stats.json?t=' + Date.now())).json() } catch { return }
   const g = s.gpu
+  if (s.generating !== generating) ((generating = !!s.generating), render())
   $('run').textContent = s.run ? '· ' + s.run.replace(/\/+$/, '').split('/').slice(-2).join('/') : ''
   $('gpuname').textContent = g ? g.name : 'no GPU found'
   push('gpu', g?.util); push('vram', g ? (100 * g.mem_used) / g.mem_total : null); push('temp', g?.temp)

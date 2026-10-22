@@ -53,9 +53,20 @@ def _ram() -> dict:
     return {"used": m["MemTotal"] - m["MemAvailable"], "total": m["MemTotal"]}
 
 
+def _generating() -> bool:
+    """Is kolam_gen making data right now? (before a run's first step, the page says so)"""
+    for d in Path("/proc").iterdir():
+        try:
+            if d.name.isdigit() and (d / "comm").read_text().strip() == "kolam_gen":
+                return True
+        except OSError:
+            pass
+    return False
+
+
 def stats() -> dict:
     return {"t": time.time(), "run": RUN, "gpu": _gpu(), "cpu": _cpu(), "cores": os.cpu_count(),
-            "load": os.getloadavg()[0], "ram": _ram()}
+            "load": os.getloadavg()[0], "ram": _ram(), "generating": _generating()}
 
 
 class Handler(SimpleHTTPRequestHandler):
