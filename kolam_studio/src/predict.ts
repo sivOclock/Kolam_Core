@@ -18,7 +18,7 @@ type Example = { file: string; dots: string; encoding: string[] } // public/exam
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <main class="rd">
     <header class="rd-head">
-      <nav class="rd-nav"><a href="./how.html">How it works</a></nav>
+      <nav class="rd-nav"><a class="rd-how" href="./how.html">How it works <span aria-hidden="true">→</span></a></nav>
       <h1>Kolam Core</h1>
       <p>Show it a kolam. It finds the dots, follows the lines, and draws the kolam back for you,
          right here on your device.</p>

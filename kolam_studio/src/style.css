@@ -443,3 +443,19 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
   .hw-four { grid-template-columns: repeat(4, 1fr); }
   .hw-looks { grid-template-columns: repeat(6, 1fr); }
 }
+
+/* main page: "How it works" as a pill that bounces now and then, to invite a click */
+.rd-nav a.rd-how { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px;
+                   background: var(--yellow); color: #1a1a1a; font: 600 14px system-ui, sans-serif; text-decoration: none;
+                   box-shadow: 0 0 0 0 rgba(250,204,21,.5); animation: rd-bounce 3.6s ease-in-out 1.2s infinite; }
+.rd-nav a.rd-how:hover { text-decoration: none; animation: none; filter: brightness(1.06); }
+.rd-nav a.rd-how span { transition: transform .2s; }
+.rd-nav a.rd-how:hover span { transform: translateX(3px); }
+@keyframes rd-bounce {
+  0%, 62%, 100% { transform: translateY(0); box-shadow: 0 0 0 0 rgba(250,204,21,.5); }
+  68% { transform: translateY(-7px); }
+  74% { transform: translateY(0); box-shadow: 0 0 0 8px rgba(250,204,21,0); }
+  80% { transform: translateY(-3px); }
+  86% { transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) { .rd-nav a.rd-how { animation: none; } }
