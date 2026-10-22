@@ -72,6 +72,8 @@ class Augment:
     rotate: float = 8.0             # degrees, +-
     perspective: float = 0.06       # corner jitter, fraction of the image side
     scale: tuple = (0.85, 1.1)
+    p_far: float = 0.0              # instead, a kolam shot from further away: scale from far_scale
+    far_scale: tuple = (0.4, 0.9)
     shift: float = 0.05             # fraction of the image side
     fit: bool = False               # shrink a rotated picture so its corners stay in the frame
     tilt: float = 0.0               # camera tilt: the far side of the picture shrinks by up to this fraction
@@ -100,7 +102,8 @@ class Augment:
     @staticmethod
     def preset(name: str) -> "Augment":
         """none: style only. light: synthetic-looking variety. photo: towards phone photos of real kolams.
-        real: photo plus bigger angles, real floors and inks, petals and dirt, camera effects."""
+        real: photo plus bigger angles, real floors and inks, petals and dirt, camera effects, and a quarter
+        of the kolams shot from further away (40-90% of the frame)."""
         if name == "none":
             return Augment()
         light = Augment(p_turn=0.5, p_geom=0.3, rotate=4.0, perspective=0.03, scale=(0.9, 1.05), shift=0.03,
@@ -113,7 +116,7 @@ class Augment:
                            p_lowres=0.3, p_jpeg=0.6, p_gray=0.1)
         if name == "real":
             return replace(Augment.preset("photo"), p_geom=1.0, rotate=30.0, fit=True, tilt=0.35, perspective=0.05,
-                           scale=(0.92, 1.1), p_glare=0.7,
+                           scale=(0.92, 1.1), p_far=0.25, p_glare=0.7,
                            p_surface=0.85, p_chalk=0.3,
                            p_ink=0.7, p_multi=0.15, p_thick=0.4, p_debris=0.3, p_texture=0.3, p_vignette=0.4,
                            p_motion=0.15, p_defocus=0.2, p_noise=0.4)
@@ -206,7 +209,7 @@ class Augment:
         s = img.size[0]
         c = (s - 1) / 2
         t = np.radians(rng.uniform(-self.rotate, self.rotate))
-        k = rng.uniform(*self.scale)
+        k = rng.uniform(*(self.far_scale if rng.random() < self.p_far else self.scale))
         if self.fit:
             k /= abs(np.cos(t)) + abs(np.sin(t))
         dx, dy = rng.uniform(-self.shift, self.shift, 2) * s

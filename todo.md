@@ -55,8 +55,8 @@ pass 1 finds small kolams. 448-512 px only if the 18-20 band stays weak.
 - [x] Not-a-kolam head, non-kolam data, photo floors, real-photo check
 - [x] GPU laptop set up: everything in `~/kolam_core_model` (WSL), `scripts/gpu/launch.sh` + `jobs.sh`
 - [x] 400k kolams up to 20 x 20 generated there (5.7 min)
-- [ ] B-M: `resnet34` backbone + context-layers option; 20-step probe (speed, memory)
-- [ ] Wider zoom range in augmentation (kolam 40-100% of the frame)
+- [x] B-M: `--backbone resnet34 --ctx-layers 4` = 11.6M params; probe: 44 images/s, 2.9 of 4 GB
+- [x] Wider zoom range: `real` puts a quarter of the kolams at 40-90% of the frame (`p_far`)
 - [ ] Generate 2M unique kolams
 - [ ] Night 1: B-M on ~1.5M images; copy `best.pt` back; look at the bands
 - [ ] Nights 2-3: continue from `last.pt` while the checks improve

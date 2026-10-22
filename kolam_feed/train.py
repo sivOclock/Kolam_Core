@@ -194,7 +194,7 @@ def train(a) -> None:
     tr, va = split(ds, a.max_dots)
     sizes = [grid_size(ds.encodings[i].split("|")) for i in tr]
     cfg = {"kind": a.model, "max_rows": max(r for r, _ in sizes), "max_cols": max(c for _, c in sizes), "d": a.width,
-           "backbone": a.backbone}
+           "backbone": a.backbone} | ({"ctx_layers": a.ctx_layers} if a.model == "grid" else {})
     step, epoch = 0, 0
     ck = out / "last.pt"
     if a.resume and ck.exists():
@@ -203,7 +203,7 @@ def train(a) -> None:
     model = build(cfg, pretrained=not (a.resume and ck.exists())).to(dev)
     enc = [p for n, p in model.named_parameters() if n.startswith("enc.") and not n.startswith(("enc.p8", "enc.p16"))]
     rest = [p for n, p in model.named_parameters() if not (n.startswith("enc.") and not n.startswith(("enc.p8", "enc.p16")))]
-    k = 0.1 if cfg["backbone"] == "resnet18" else 1.0                  # pretrained layers move gently
+    k = 0.1 if cfg["backbone"].startswith("resnet") else 1.0           # pretrained layers move gently
     opt = torch.optim.AdamW([{"params": enc, "k": k}, {"params": rest, "k": 1.0}], lr=a.lr, weight_decay=0.05)
     if a.resume and ck.exists():
         if not load_weights(model, state["model"]):
@@ -530,8 +530,10 @@ def add_parsers(sub) -> None:
     t.add_argument("--out", default="runs/seq")
     t.add_argument("--size", type=int, default=384, help="image side, px")
     t.add_argument("--width", type=int, default=256, help="model width")
-    t.add_argument("--backbone", choices=["resnet18", "small"], default="resnet18",
-                   help="resnet18: ImageNet-pretrained; small: from scratch")
+    t.add_argument("--backbone", choices=["resnet18", "resnet34", "small"], default="resnet18",
+                   help="resnet18 / resnet34: ImageNet-pretrained; small: from scratch")
+    t.add_argument("--ctx-layers", type=int, default=2, help="grid model: layers of the context transformer "
+                   "(it sees the whole picture and counts the grid)")
     t.add_argument("--batch", type=int, default=32)
     t.add_argument("--steps", type=int, default=100_000)
     t.add_argument("--lr", type=float, default=3e-4)

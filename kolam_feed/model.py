@@ -45,15 +45,15 @@ class _Block(nn.Module):
 
 class Encoder(nn.Module):
     """Features at stride 8 (f8, for reading gaps) and stride 16 (f16, for context), both `width` wide.
-    backbone "resnet18": torchvision's ResNet-18 up to layer3, ImageNet weights when pretrained (the
-    weights are cached under TORCH_HOME); "small": a small ResNet from scratch."""
+    backbone "resnet18" / "resnet34": torchvision's ResNet up to layer3, ImageNet weights when pretrained
+    (cached under TORCH_HOME; resnet34 is the deeper one, same channels); "small": a small ResNet from scratch."""
 
     def __init__(self, width: int = 256, backbone: str = "resnet18", pretrained: bool = True):
         super().__init__()
         self.backbone = backbone
-        if backbone == "resnet18":
+        if backbone in ("resnet18", "resnet34"):
             import torchvision
-            r = torchvision.models.resnet18(weights="IMAGENET1K_V1" if pretrained else None)
+            r = getattr(torchvision.models, backbone)(weights="IMAGENET1K_V1" if pretrained else None)
             self.stem = nn.Sequential(r.conv1, r.bn1, r.relu, r.maxpool, r.layer1)
             self.s8, self.s16 = r.layer2, r.layer3
             self.p8, self.p16 = nn.Conv2d(128, width, 1), nn.Conv2d(256, width, 1)
@@ -68,7 +68,7 @@ class Encoder(nn.Module):
         self.register_buffer("mean", torch.tensor([0.5, 0.5, 0.5]).view(1, 3, 1, 1))
 
     def forward(self, x):
-        if self.backbone == "resnet18":
+        if self.backbone != "small":
             f8 = self.s8(self.stem((x - self.mean) / self.std))
             return self.p8(f8), self.p16(self.s16(f8))
         f8 = self.s8(self.s4(self.stem((x - self.mean) * 2)))
@@ -209,12 +209,12 @@ def lattice_corners(rows, cols) -> torch.Tensor:
 
 class GridModel(nn.Module):
     def __init__(self, max_rows: int = 16, max_cols: int = 16, d: int = 256, backbone: str = "resnet18",
-                 pretrained: bool = True):
+                 pretrained: bool = True, ctx_layers: int = 2):
         super().__init__()
-        self.cfg = dict(kind="grid", max_rows=max_rows, max_cols=max_cols, d=d, backbone=backbone)
+        self.cfg = dict(kind="grid", max_rows=max_rows, max_cols=max_cols, d=d, backbone=backbone, ctx_layers=ctx_layers)
         self.enc = Encoder(d, backbone, pretrained)
         self.ctx = nn.TransformerEncoder(nn.TransformerEncoderLayer(d, 8, 4 * d, 0.1, batch_first=True,
-                                                                    norm_first=True), 2)
+                                                                    norm_first=True), ctx_layers)
         self.size_head = nn.Linear(d, max_rows + max_cols)            # rows 1..max_rows, cols 1..max_cols
         self.corner_head = nn.Conv2d(d, 4, 1)                         # soft-argmax heatmaps on f8
         self.orient = nn.Embedding(2, 2 * d)

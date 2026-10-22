@@ -20,9 +20,30 @@ def shard_files(src: str | Path) -> list[Path]:
     return sorted(src.glob("shard_*.jsonl")) if src.is_dir() else [src]
 
 
-def load_encodings(src: str | Path) -> tuple[list[str], list[str]]:
+class Packed:
+    """A read-only list of strings in one byte buffer + offsets. DataLoader workers are forked copies of
+    the dataset; a list of millions of str objects gets copied into every worker bit by bit (reading an
+    object writes its refcount), a numpy buffer stays shared."""
+
+    def __init__(self, items: list[str]):
+        b = [x.encode() for x in items]
+        self.off = np.zeros(len(b) + 1, np.int64)
+        np.cumsum([len(x) for x in b], out=self.off[1:])
+        self.buf = np.frombuffer(b"".join(b), np.uint8)
+
+    def __len__(self) -> int:
+        return len(self.off) - 1
+
+    def __getitem__(self, i: int) -> str:
+        return self.buf[self.off[i]:self.off[i + 1]].tobytes().decode()
+
+    def __iter__(self):
+        return (self[i] for i in range(len(self)))
+
+
+def load_encodings(src: str | Path) -> tuple[Packed, Packed]:
     """Every kolam in a kolam_gen output dir (or one .jsonl file): its encoding as one "|"-joined
-    string (compact in memory) and its system."""
+    string and its system, each packed (Packed) so millions of them stay shared with the workers."""
     encs, systems = [], []
     for f in shard_files(src):
         with open(f) as fh:
@@ -30,7 +51,7 @@ def load_encodings(src: str | Path) -> tuple[list[str], list[str]]:
                 r = json.loads(line)
                 encs.append("|".join(r["encoding"]))
                 systems.append(r.get("system", ""))
-    return encs, systems
+    return Packed(encs), Packed(systems)
 
 
 def target_text(enc: list[str]) -> str:

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copy launch.sh and jobs.sh to ~/kolam_core_model on the GPU box (WSL); see todo.md "Running on the GPU laptop".
 # The GPU laptop's launcher, all inside ~/kolam_core_model. The Windows scheduled task "kolam_core_model"
-# runs it from the desktop session, so WSL stays up. It runs jobs.sh (one training run per line,
-# "<run name> <train args...>", one after another, each resumable), with:
+# runs it from the desktop session, so WSL stays up. It runs jobs.sh, one line after another: a training
+# run "<run name> <train args...>" (resumable), or "sh <command>" (e.g. generating data), with:
 #   tmux "kolam": train (the jobs) + watch (http://localhost:8800, the run in progress)
 #   the live view opened in the laptop's browser
 #   Windows asked not to sleep until the jobs end (awake.ps1; no setting is changed)
@@ -20,6 +20,7 @@ source ~/kolam_core_model/env.sh
 export PYTHONWARNINGS=ignore PYTHONUNBUFFERED=1
 while read -r name args; do
   [ -z "$name" ] || [ "${name:0:1}" = "#" ] && continue
+  if [ "$name" = "sh" ]; then bash -c "$args" 2>&1 | tee -a runs/jobs.out; continue; fi
   mkdir -p runs/$name
   tmux kill-window -t kolam:watch 2>/dev/null
   tmux new-window -d -t kolam -n watch "source ~/kolam_core_model/env.sh; python -m kolam_feed.watch runs/$name --port 8800"
