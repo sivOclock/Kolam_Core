@@ -12,18 +12,48 @@ const FACING_OUT = { N: '0678', W: '0678', E: '0345' } // digits a border gap ma
 
 type Meta = { size: number; max_len: number; bos: number }
 type Model = { enc: ort.InferenceSession; dec: ort.InferenceSession; meta: Meta }
-let model: Promise<Model> | null = null
+const models = new Map<string, Promise<Model>>() // by folder, each loaded once
 
-export function loadReader(base = './model/'): Promise<Model> {
-  model ??= (async () => {
-    const meta: Meta = await (await fetch(base + 'model.json')).json()
-    const [enc, dec] = await Promise.all(
-      ['encoder.onnx', 'decoder.onnx'].map((f) => ort.InferenceSession.create(base + f)),
-    )
-    return { enc, dec, meta }
-  })()
-  model.catch(() => (model = null))
-  return model
+/** Fetch a file, reporting bytes as they arrive (a phone on mobile data wants to see progress). */
+async function download(url: string, onBytes: (n: number, total: number) => void): Promise<Uint8Array> {
+  const r = await fetch(url)
+  if (!r.ok || !r.body) throw new Error(`${url}: ${r.status}`)
+  const total = +(r.headers.get('content-length') ?? 0)
+  const parts: Uint8Array[] = []
+  let n = 0
+  for (const rd = r.body.getReader(); ; ) {
+    const { done, value } = await rd.read()
+    if (done) break
+    parts.push(value)
+    onBytes((n += value.length), total)
+  }
+  const out = new Uint8Array(n)
+  parts.reduce((o, p) => (out.set(p, o), o + p.length), 0)
+  return out
+}
+
+/** The model in folder `base` (encoder.onnx, decoder.onnx, model.json); onProgress gets 0..1. */
+export function loadReader(base = './model/', onProgress?: (f: number) => void): Promise<Model> {
+  let m = models.get(base)
+  if (!m) {
+    m = (async () => {
+      const meta: Meta = await (await fetch(base + 'model.json')).json()
+      const got = [0, 0], size = [0, 0]
+      const files = await Promise.all(
+        ['encoder.onnx', 'decoder.onnx'].map((f, i) =>
+          download(base + f, (n, t) => {
+            ;[got[i], size[i]] = [n, t]
+            if (size[0] && size[1]) onProgress?.((got[0] + got[1]) / (size[0] + size[1]))
+          }),
+        ),
+      )
+      const [enc, dec] = await Promise.all(files.map((b) => ort.InferenceSession.create(b)))
+      return { enc, dec, meta }
+    })()
+    m.catch(() => models.delete(base))
+    models.set(base, m)
+  }
+  return m
 }
 
 /** encoding.allowed_next: the tokens that keep a partial encoding well formed. */
@@ -92,8 +122,9 @@ export async function prepare(img: Blob, size: number): Promise<HTMLCanvasElemen
  *  head; 1 for a model exported before it had one), the square the model saw and the time taken. */
 export async function readKolam(
   img: Blob,
+  base = './model/',
 ): Promise<{ encoding: string[]; kolam: number; seen: HTMLCanvasElement; ms: number }> {
-  const { enc, dec, meta } = await loadReader()
+  const { enc, dec, meta } = await loadReader(base)
   const seen = await prepare(img, meta.size)
   const t0 = performance.now()
   const S = meta.size

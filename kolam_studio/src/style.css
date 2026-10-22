@@ -260,3 +260,54 @@ body.scroll { overflow: auto; height: auto; min-height: 100vh; }
 .drop.over { border-color: var(--yellow); color: var(--yellow); }
 .drop img { max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 4px; }
 .enc-card.seen img, .enc-card.seen canvas { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 4px; image-rendering: pixelated; }
+
+/* ── Kolam Reader (predict.html): one column on a phone, side by side from 720px ─────────── */
+.rd [hidden] { display: none !important; }
+body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(--bg-card); font-family: system-ui, sans-serif; }
+.rd { max-width: 980px; margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 16px 28px; display: flex; flex-direction: column; gap: 18px; }
+.rd-head h1 { font: 36px 'Schoolbell', cursive; color: var(--chalk); letter-spacing: .5px; }
+.rd-head p { color: var(--muted); font-size: 15px; line-height: 1.45; margin-top: 4px; max-width: 60ch; }
+.rd-pick { display: flex; flex-direction: column; gap: 12px; background: var(--bg-panel); border-radius: 14px; padding: 14px; }
+.rd-models { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rd-models button { background: var(--bg-card); color: var(--text); border: 1.5px solid transparent; border-radius: 10px;
+                    padding: 10px 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+                    font: 15px system-ui, sans-serif; cursor: pointer; min-height: 44px; }
+.rd-models button b { font-weight: 600; }
+.rd-models button small { color: var(--muted); font-size: 12px; }
+.rd-models button[aria-checked="true"] { border-color: var(--yellow); }
+.rd-models button[aria-checked="true"] small { color: var(--yellow); }
+.rd-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rd-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 16px;
+          border-radius: 10px; border: 1.5px solid var(--muted); background: transparent; color: var(--chalk);
+          font: 600 16px system-ui, sans-serif; cursor: pointer; user-select: none; }
+.rd-btn:hover { border-color: var(--chalk); }
+.rd-btn.primary { background: var(--yellow); border-color: var(--yellow); color: #1a1a1a; }
+.rd-btn.primary:hover { filter: brightness(1.08); }
+.rd-btn:focus-within, .rd-btn:focus-visible, .rd-models button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.rd-drop { border: 1.5px dashed #3c5a52; border-radius: 10px; padding: 14px; text-align: center; color: var(--muted); font-size: 14px; }
+.rd-drop.over { border-color: var(--yellow); color: var(--yellow); }
+.rd-bar { height: 6px; border-radius: 99px; background: var(--bg-card); overflow: hidden; }
+.rd-bar i { display: block; height: 100%; width: 0; background: var(--yellow); transition: width .2s; }
+.rd-status { color: var(--green); font-size: 14px; min-height: 1.4em; line-height: 1.4; }
+.rd-status.error { color: var(--red); }
+.rd-result { display: grid; grid-template-columns: 1fr; gap: 14px; scroll-margin-top: 12px; }
+.rd-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rd-frame { aspect-ratio: 1; width: 100%; border-radius: 12px; overflow: hidden; background: var(--bg-panel); }
+.rd-frame canvas { width: 100%; height: 100%; display: block; }
+#seen { object-fit: contain; }
+.rd-card figcaption { color: var(--muted); font-size: 14px; text-align: center; }
+.rd-digits { color: var(--muted); font-size: 14px; }
+.rd-digits summary { cursor: pointer; padding: 6px 0; }
+.rd-digits pre { font: 14px/1.35 ui-monospace, monospace; color: var(--chalk); background: var(--bg-panel); padding: 10px 12px;
+                 border-radius: 8px; overflow-x: auto; margin-top: 6px; }
+.rd-foot { color: var(--muted); font-size: 13px; line-height: 1.5; border-top: 1px solid var(--bg-panel); padding-top: 14px; }
+.rd-foot a { color: var(--yellow); }
+@media (min-width: 720px) {
+  .rd { padding-top: 32px; gap: 22px; }
+  .rd-head h1 { font-size: 44px; }
+  .rd-pick { display: grid; grid-template-columns: 1fr 1fr; align-items: center; }
+  .rd-drop, .rd-bar, .rd-status { grid-column: 1 / -1; }
+  .rd-result { grid-template-columns: 1fr 1fr; }
+  .rd-digits, #again { grid-column: 1 / -1; }
+  #again { justify-self: start; }
+}

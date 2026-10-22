@@ -1,0 +1,4 @@
+[
+  {"id": "pilot", "name": "Best", "params": "7.1M", "note": "model A, 69.5% exact on held-out kolams up to 5x5", "kolam_check": false},
+  {"id": "tiny", "name": "Fast", "params": "1.3M", "note": "model A, 43% exact on held-out kolams up to 5x5", "kolam_check": false}
+]
