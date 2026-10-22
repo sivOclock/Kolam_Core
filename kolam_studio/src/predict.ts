@@ -39,21 +39,23 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </section>
 
     <section class="rd-result" id="result" hidden>
-      <figure class="rd-card">
-        <div class="rd-frame"><canvas id="seen"></canvas></div>
-        <figcaption>what the model saw</figcaption>
-      </figure>
-      <figure class="rd-card">
+      <figure class="rd-main">
         <div class="rd-frame"><canvas id="board" class="board"></canvas></div>
         <figcaption id="caption">what it read</figcaption>
       </figure>
-      <details class="rd-digits"><summary>the digits it read</summary><pre id="digits"></pre></details>
-      <button class="rd-btn" id="again">trace again</button>
+      <aside class="rd-side">
+        <figure class="rd-thumb">
+          <canvas id="seen"></canvas>
+          <figcaption>the photo, as the model saw it</figcaption>
+        </figure>
+        <button class="rd-btn" id="again">↻ draw it again</button>
+        <details class="rd-digits"><summary>the digits it read</summary><pre id="digits"></pre></details>
+      </aside>
     </section>
 
     <footer class="rd-foot">
       Works best on dot kolams up to 5 × 5 dots, photographed from above. Early models, trained on drawn
-      kolams; bigger kolams are next. <a href="./index.html">Draw your own kolam</a>
+      kolams; bigger kolams are next. <a href="./studio.html">Draw your own kolam</a>
     </footer>
   </main>`
 
@@ -77,7 +79,7 @@ async function useModel(id: string): Promise<boolean> {
   current = id
   document.querySelectorAll<HTMLButtonElement>('#models button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.id === id)))
   const m = models.find((x) => x.id === id)!
-  say(`loading the ${m.name.toLowerCase()} model…`)
+  say(`loading the model (${m.params} parameters, once)…`)
   bar.hidden = false
   const fill = bar.querySelector('i')!
   fill.style.width = '0%'
@@ -85,7 +87,7 @@ async function useModel(id: string): Promise<boolean> {
     await loadReader(base(id), (f) => (fill.style.width = `${Math.round(100 * f)}%`))
     if (current !== id) return false
     bar.hidden = true
-    say(`${m.name} model ready (${m.params} parameters) · take or choose a photo`)
+    say(`model ready (${m.params} parameters, on this device) · take or choose a photo`)
     return true
   } catch (e) {
     bar.hidden = true
@@ -100,6 +102,7 @@ async function init(): Promise<void> {
   } catch {
     return say('no models found (model/models.json)', true)
   }
+  $('models').hidden = models.length < 2 // one model: no picker
   $('models').innerHTML = models
     .map((m) => `<button role="radio" data-id="${m.id}" title="${m.note}"><b>${m.name}</b><small>${m.params}</small></button>`)
     .join('')
@@ -130,37 +133,61 @@ async function readExample(i: number): Promise<void> {
   read(await (await fetch(`./examples/${e.file}`)).blob(), e.encoding)
 }
 
-/** Draw an encoding on the board; animate traces it stroke by stroke in about 3 seconds. */
+/** Draw an encoding on the board. animate: the dots appear one by one, then each line is traced in turn
+ *  (about 4 s whatever the size); otherwise everything at once (on resize). */
 function drawKolam(enc: string[]): string {
   const h = fromEncoding(enc)
   const k = compile(h)
   const problems = validate(h)
   const board = new Board($<HTMLCanvasElement>('board'), '')
+  const caption = $<HTMLElement>('caption')
+  const lines = k.strokes.length
+  const dots = [...k.used].map((key) => key.split(',').map(Number)).sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const done = `${h.rows} × ${h.cols} dots · ${lines} line${lines === 1 ? '' : 's'}` +
+    (problems.length ? ' · breaks a kolam rule, so likely misread' : '')
+  caption.title = problems.map((p) => p.message).join('\n') // the details, for whoever hovers
   redraw = (animate: boolean) => {
     const mine = run
     board.layout(h.rows, h.cols, 1) // room for crescents pointing off the grid
     board.clear()
-    board.dots(CHALK.main, Math.max(2, board.s * 0.14), k.used) // unused dots are not drawn
+    const r = Math.max(2, board.s * 0.14)
     const w = Math.max(1.5, board.s * 0.14)
-    const segs: [XY[], number][] = []
-    drawn(k).strokes.forEach((P, si) => bezierSegments(board, P).forEach((seg, i) => segs.push([seg, si * 1009 + i * 7 + 1])))
-    if (!animate) return segs.forEach(([seg, seed]) => board.chalk(seg, CHALK.main, w, seed))
-    const per = Math.max(1, Math.ceil(segs.length / 180)) // ~180 frames whatever the size
-    let n = 0
-    const step = () => {
-      if (mine !== run) return
-      for (const [seg, seed] of segs.slice(n, n + per)) board.chalk(seg, CHALK.main, w, seed)
-      n += per
-      if (n < segs.length) requestAnimationFrame(step)
+    const strokes = drawn(k).strokes.map((P, si) => bezierSegments(board, P).map((seg, i): [XY[], number] => [seg, si * 1009 + i * 7 + 1]))
+    if (!animate) {
+      board.dots(CHALK.main, r, k.used)
+      strokes.flat().forEach(([seg, seed]) => board.chalk(seg, CHALK.main, w, seed))
+      caption.textContent = done
+      return
     }
-    requestAnimationFrame(step)
+    const dotMs = Math.min(1200, 45 * dots.length) // dots: up to 1.2 s
+    const total = strokes.reduce((n, s) => n + s.length, 0)
+    const perFrame = Math.max(1, Math.ceil(total / 160)) // lines: ~160 frames
+    let shown = 0, line = 0, seg = 0
+    const t0 = performance.now()
+    const frame = (now: number) => {
+      if (mine !== run) return
+      const due = dotMs ? Math.min(dots.length, Math.floor(((now - t0) / dotMs) * dots.length) + 1) : dots.length
+      for (; shown < due; shown++) {
+        const [i, j] = dots[shown]
+        board.disc([2 * i + 1, 2 * j + 1], r, CHALK.main) // each dot pressed into the floor
+        caption.textContent = `placing the dots… ${shown + 1} of ${dots.length}`
+      }
+      if (shown < dots.length) return void requestAnimationFrame(frame)
+      for (let n = 0; n < perFrame && line < strokes.length; n++) {
+        const [pts, seed] = strokes[line][seg]
+        board.chalk(pts, CHALK.main, w, seed)
+        if (++seg === strokes[line].length) (line++, (seg = 0))
+      }
+      if (line < strokes.length) {
+        caption.textContent = `drawing line ${line + 1} of ${lines}…`
+        return void requestAnimationFrame(frame)
+      }
+      caption.textContent = done
+    }
+    requestAnimationFrame(frame)
   }
   redraw(true)
-  const lines = k.strokes.length
-  const caption = `${h.rows} × ${h.cols} dots · ${lines} line${lines === 1 ? '' : 's'}`
-  // a reading that breaks a kolam rule is still drawn, flagged plainly (the details go in the tooltip)
-  $<HTMLElement>('caption').title = problems.map((p) => p.message).join('\n')
-  return problems.length ? `${caption} · breaks a kolam rule, so likely misread` : caption
+  return done
 }
 
 /** Read a picture; `truth` (an example's real encoding) adds whether the reading matches it. */
@@ -187,16 +214,16 @@ async function read(img: Blob, truth?: string[]): Promise<void> {
     return say(`this doesn't look like a kolam (${Math.round(100 * (1 - r.kolam))}% sure) · try a photo of a kolam`, true)
   }
   try {
-    $<HTMLElement>('caption').textContent = drawKolam(r.encoding)
+    drawKolam(r.encoding)
     const verdict = !truth ? '' : r.encoding.join('|') === truth.join('|') ? ' · ✓ matches the real kolam exactly'
       : ` · ✗ differs from the real kolam in ${diff(r.encoding, truth)}`
-    say(`read in ${r.ms} ms with the ${m.name.toLowerCase()} model${verdict}`)
+    say(`read in ${(r.ms / 1000).toFixed(1)} s${verdict}`)
   } catch (e) {
     redraw = null
     $<HTMLElement>('caption').textContent = 'not a drawable kolam'
     say(`it read something that isn't a drawable kolam (${(e as Error).message}) · try a straighter, closer photo`, true)
   }
-  $('result').scrollIntoView({ behavior: 'smooth', block: 'start' })
+  $('board').scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
 /** How a reading differs from the truth: gaps that differ, or that the grid size is off. */

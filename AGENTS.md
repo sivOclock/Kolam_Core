@@ -67,7 +67,8 @@ Kolam_labs/
 │   ├── watch.py / watch.html      # live training page
 │   └── verify.py                  # independent re-check of kolam_gen output
 ├── scripts/gpu/                   # launch.sh + jobs.sh: overnight training on the GPU laptop (todo.md)
-├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam;
+├── kolam_studio/                  # Vite + TS, no backend: index.html = photo reader (main page, model in the browser);
+│                                  #   studio.html = brush drawing UI: draw → formula → kolam;
 │                                  #   encodings.html: paste kolam encodings → one chalkboard each
 │   └── src/kolam/                 # TS port of model + DSL + compiler + drawn() + encoding; reads ../brushes.json
 ├── refs/                          # reference sheets: primitives, mixed options, example kolams
@@ -134,7 +135,7 @@ python -m kolam_feed preview data/enc_1m -o sheet.png   # rendered training imag
 cd kolam_studio && npm install && npm run dev        # brush drawing UI on http://localhost:5173
 python -m kolam_feed train data/enc_400k_20 --model grid --size 384 --aug real --not-kolam data/not_kolam --real-kolams data/real_kolams_line --out runs/b
 python -m kolam_feed.watch runs/b                    # live training page: http://localhost:8800
-python -m kolam_feed export runs/pilot_seq/last.pt  # ONNX into kolam_studio/public/model: predict.html reads photos in the browser
+python -m kolam_feed export runs/pilot_seq/last.pt  # ONNX into kolam_studio/public/model: the reader (index.html) reads photos in the browser
 cd kolam_studio && npm run build                    # dist/ = static site (upload as is, e.g. cPanel; .htaccess sets .wasm/.onnx types)
 ```
 (The old `kolam_engine` npm app is archived; `kolam_studio/` is the only npm app.)

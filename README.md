@@ -132,7 +132,7 @@ python -m kolam_feed export runs/b/best.pt && (cd kolam_studio && npm run build)
 
 `--not-kolam` is a folder of ordinary photos (Imagenette) mixed with drawn non-kolams; `--real-kolams`
 is a folder of real kolam photos (no labels) the not-a-kolam check is scored on. Checkpoints:
-`last.pt` (resume) and `best.pt`. The photo reader (`kolam_studio/predict.html`) runs the exported
+`last.pt` (resume) and `best.pt`. The photo reader (`kolam_studio/index.html`, the main page) runs the exported
 model with onnxruntime-web, nothing leaves the browser.
 
 ## Earlier dataset (3000-sample run, `docs/results/report.md`)

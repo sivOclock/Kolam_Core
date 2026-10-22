@@ -137,7 +137,7 @@ const TRACKS = [
   ["Same preprocessing everywhere", "A photo must reach the model the way training images did: upright, padded to a square, resized, same colour scaling. Any difference quietly costs accuracy.", "prepare() in train.py; mean/std inside Encoder", "search 'training-serving skew'"],
   ["ONNX export", "Save the model as a standard file any runtime can load (browser, Android, iOS).", "planned: encoder.onnx + decoder_step.onnx", "PyTorch 'torch.onnx' tutorial"],
   ["Quantisation (int8, fp16)", "Store weights in 8 or 16 bits instead of 32: 2–4× smaller, usually ~same accuracy.", "A today: 28 MB fp32 → 14 MB fp16 → ~7 MB int8", "ONNX Runtime quantisation docs"],
-  ["ONNX Runtime Web: WebGPU vs WASM", "Runs the model in the browser, on the GPU when available (fast) or the CPU (slower).", "predict.html without the Python server", "onnxruntime.ai web docs"],
+  ["ONNX Runtime Web: WebGPU vs WASM", "Runs the model in the browser, on the GPU when available (fast) or the CPU (slower).", "the reader page (index.html) without the Python server", "onnxruntime.ai web docs"],
   ["TFLite / Core ML, phone NPUs", "The phone-native formats (TFLite is now called LiteRT); they can use the phone's AI chip.", "the mobile app", "LiteRT and Core ML docs"],
   ["Light phone backbones", "CNNs built for phones (MobileNetV3, EfficientNet-Lite): a fraction of ResNet-18's maths.", "planned phone encoder (docs §7, 'Next')", "search 'MobileNetV3'"],
   ["Distillation", "Train a small model to copy a big one. Only needed if the big one is too slow on phones.", "backup plan", "search 'knowledge distillation'"],

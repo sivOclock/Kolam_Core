@@ -477,7 +477,7 @@ def serve_cmd(a) -> None:
 
 
 def export_cmd(a) -> None:
-    """A seq checkpoint -> two ONNX files for the browser (kolam_studio/reader.html, no server):
+    """A seq checkpoint -> two ONNX files for the browser (kolam_studio/index.html, no server):
     encoder.onnx  image (1, 3, S, S) in [0, 1] -> mem (1, N, d) and kolam (1,), the chance it is a kolam
                   at all, run once per picture;
     decoder.onnx  mem, ids, row, col (1, max_len) padded, pos (1,) -> logits of the token after pos (1, 11),
@@ -586,7 +586,7 @@ def add_parsers(sub) -> None:
     v.add_argument("--port", type=int, default=8765)
     v.add_argument("--device", default="auto")
     v.set_defaults(fn=serve_cmd)
-    x = sub.add_parser("export", help="seq checkpoint -> ONNX for the in-browser reader (kolam_studio/reader.html)")
+    x = sub.add_parser("export", help="seq checkpoint -> ONNX for the in-browser reader (kolam_studio/index.html)")
     x.add_argument("ckpt")
     x.add_argument("-o", "--out", default="kolam_studio/public/model")
     x.set_defaults(fn=export_cmd)
