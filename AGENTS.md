@@ -2,7 +2,7 @@
 
 Source of truth for semantics: `docs/hypergraph_kolams.md`. Read this first, follow it exactly.
 
-Current focus: data-generation pipeline + training the model (`todo.md`).
+Current focus: training model B (grid) and shipping it in the browser — the plan is `todo.md`.
 The old kolam engine / UI lives in `archive/` and is out of scope: do not revive its code
 and never import from it. Its chalkboard look (board texture, wooden frame, chalk brush,
 Schoolbell labels, chalk palette) is reused on purpose by `kolam_studio/`, the brush
@@ -62,8 +62,11 @@ Kolam_labs/
 │   ├── encoding.py                # kolam encoding <-> label; grid / cells / tokens; constrained decoding (spec §12)
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; observe / decode
 │   ├── geometry.py / render.py    # closed chained Bezier, drawn(), check_geometry; PIL renderer + random styles
-│   ├── data.py                    # KolamDataset (renders on the fly), collate
+│   ├── data.py                    # KolamDataset (renders on the fly), NotKolamDataset, collate
+│   ├── model.py / train.py        # models A (seq) and B (grid) + is-a-kolam head; train, eval, export
+│   ├── watch.py / watch.html      # live training page
 │   └── verify.py                  # independent re-check of kolam_gen output
+├── scripts/gpu/                   # launch.sh + jobs.sh: overnight training on the GPU laptop (todo.md)
 ├── kolam_studio/                  # brush drawing UI (Vite + TS, no backend): draw → formula → kolam;
 │                                  #   encodings.html: paste kolam encodings → one chalkboard each
 │   └── src/kolam/                 # TS port of model + DSL + compiler + drawn() + encoding; reads ../brushes.json
@@ -129,7 +132,10 @@ kolam_gen/target/release/kolam_gen big --system substitution --size 64 -o big.js
 python -m kolam_feed verify  data/enc_1m --n 5000    # independent Python re-check; exit 1 on failure
 python -m kolam_feed preview data/enc_1m -o sheet.png   # rendered training images
 cd kolam_studio && npm install && npm run dev        # brush drawing UI on http://localhost:5173
-python -m kolam_feed serve runs/pilot_seq/last.pt   # model server for the studio's predict.html (drop a photo, see the kolam)
+python -m kolam_feed train data/enc_400k_20 --model grid --size 384 --aug real --not-kolam data/not_kolam --real-kolams data/real_kolams_line --out runs/b
+python -m kolam_feed.watch runs/b                    # live training page: http://localhost:8800
+python -m kolam_feed export runs/pilot_seq/last.pt  # ONNX into kolam_studio/public/model: predict.html reads photos in the browser
+cd kolam_studio && npm run build                    # dist/ = static site (upload as is, e.g. cPanel; .htaccess sets .wasm/.onnx types)
 ```
 (The old `kolam_engine` npm app is archived; `kolam_studio/` is the only npm app.)
 

@@ -1,0 +1,3 @@
+# For Apache / cPanel hosting of the built site (dist/): serve the model runtime and weights with the right types.
+AddType application/wasm .wasm
+AddType application/octet-stream .onnx

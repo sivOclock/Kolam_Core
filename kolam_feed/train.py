@@ -5,9 +5,12 @@
     python -m kolam_feed eval  runs/seq/last.pt data/enc_1m --n 2000 --aug photo
 
 Images are rendered on the fly (KolamDataset), a fresh look every epoch. Every 100th kolam is held out
-for validation. Checkpoints: <out>/last.pt every --save-every steps (resume from it), and a kept
-<out>/step_<n>.pt at every evaluation. Scores: exact (the whole encoding right, i.e. the exact label), valid (the answer reads
-back into a kolam), digits (gap accuracy where the predicted grid has the right size).
+for validation. Each batch also gets --not-kolam-share non-kolams (NotKolamDataset: photos from
+--not-kolam, empty floors, dot grids, scribbles) for the model's "is this a kolam?" head.
+Checkpoints: <out>/last.pt every --save-every steps (resume from it) and <out>/best.pt (best held-out
+exact). Scores: exact (the whole encoding right, i.e. the exact label), valid (the answer reads back
+into a kolam), digits (gap accuracy where the predicted grid has the right size), keeps_kolams /
+rejects (the kolam head on held-out kolams / non-kolams). Live view: python -m kolam_feed.watch <out>.
 """
 from __future__ import annotations
 
@@ -22,7 +25,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from .data import KolamDataset
+from .data import KolamDataset, NotKolamDataset
 from .encoding import KolamError, encoding_grid, from_encoding
 from .model import PAD, TOK, build, gap_points
 
@@ -91,27 +94,77 @@ def score(pred: list[list[str]], true: list[list[str]]) -> Counter:
     return c
 
 
-def evaluate(model, loader, dev, limit: int | None = None) -> dict:
+def evaluate(model, loader, dev, limit: int | None = None, neg=None, real=None) -> dict:
+    """Reading scores on held-out kolams; with `neg` (a loader of non-kolam image batches) also the
+    kolam head: keeps_kolams (kolams it says are kolams) and rejects (non-kolams it turns away); with
+    `real` (a batch of real kolam photos, no labels needed) keeps_real: the real photos it keeps."""
     model.eval()
-    c, by_size, secs = Counter(), {}, 0.0
+    c, by_size, by_band, secs = Counter(), {}, {}, 0.0
     for b in loader:
         img = b["image"].to(dev)
         t = time.time()
         with torch.autocast(dev.type, enabled=dev.type == "cuda"):
             pred = model.predict(img)
+            if neg is not None:
+                c["kept"] += int((model.is_kolam(img) >= 0.5).sum())
         secs += time.time() - t
         for p, t in zip(pred, b["encoding"]):
             s = score([p], [t])
             c += s
             k = "x".join(map(str, grid_size(t)))
             by_size[k] = by_size.get(k, Counter()) + s
+            m = max(grid_size(t))
+            lo = 3 * ((m - 3) // 3) + 3 if m >= 3 else 1
+            band = f"{lo}-{lo + 2}" if m >= 3 else "1-2"              # 3-5, 6-8, ... by the longer side
+            by_band[band] = by_band.get(band, Counter()) + s
         if limit and c["n"] >= limit:
             break
+    r = {}
+    if neg is not None:
+        nn_, rejected = 0, 0
+        with torch.autocast(dev.type, enabled=dev.type == "cuda"):
+            for img in neg:
+                rejected += int((model.is_kolam(img.to(dev)) < 0.5).sum())
+                nn_ += len(img)
+                if limit and nn_ >= limit:
+                    break
+        r = {"keeps_kolams": c["kept"] / max(c["n"], 1), "rejects": rejected / max(nn_, 1), "n_not_kolam": nn_}
+    if real is not None:
+        with torch.autocast(dev.type, enabled=dev.type == "cuda"):
+            r["keeps_real"] = float((model.is_kolam(real.to(dev)) >= 0.5).float().mean())
     model.train()
     n = max(c["n"], 1)
     return {"n": c["n"], "exact": c["exact"] / n, "valid": c["valid"] / n, "sized": c["sized"] / n,
             "digits": c["digits_ok"] / max(c["digits"], 1), "ms_per_image": round(1000 * secs / n, 1),
-            "exact_by_size": {k: round(v["exact"] / v["n"], 3) for k, v in sorted(by_size.items())}}
+            "exact_by_size": {k: round(v["exact"] / v["n"], 3) for k, v in sorted(by_size.items())},
+            "by_band": {k: {"n": v["n"], "exact": round(v["exact"] / v["n"], 3),
+                            "digits": round(v["digits_ok"] / max(v["digits"], 1), 4), "sized": round(v["sized"] / v["n"], 3)}
+                        for k, v in sorted(by_band.items(), key=lambda kv: int(kv[0].split("-")[0]))}} | r
+
+
+def real_photos(folder, size: int) -> torch.Tensor:
+    """Every picture in a folder of real kolam photos, prepared like any input (prepare)."""
+    from PIL import Image
+    from .data import PHOTO_EXT
+    fs = sorted(f for f in Path(folder).rglob("*") if f.suffix.lower() in PHOTO_EXT)
+    return torch.stack([torch.from_numpy(np.asarray(prepare(Image.open(f), size), np.float32) / 255).permute(2, 0, 1)
+                        for f in fs])
+
+
+def neg_images(items: list[dict]) -> torch.Tensor:
+    """collate for NotKolamDataset: just the pictures, as one float batch."""
+    return torch.stack([torch.from_numpy(np.asarray(it["image"].convert("RGB"), np.float32) / 255).permute(2, 0, 1)
+                        for it in items])
+
+
+def load_weights(model, sd: dict) -> list[str]:
+    """Load a checkpoint's weights; one from before the kolam head loads too (the head starts fresh).
+    Returns the missing keys."""
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    bad = [k for k in missing if not k.startswith("kolam.")] + list(unexpected)
+    if bad:
+        raise RuntimeError(f"checkpoint does not fit the model: {bad[:5]}")
+    return missing
 
 
 def _hms(sec: float) -> str:
@@ -135,7 +188,9 @@ def train(a) -> None:
     dev = _device(a.device)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    ds = KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed, transform=to_item)
+    floors = NotKolamDataset(a.not_kolam, split="train").files if a.not_kolam and a.photo_floor else None
+    ds = KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed, transform=to_item, photo_floors=floors,
+                      p_photo_floor=a.photo_floor)
     tr, va = split(ds, a.max_dots)
     sizes = [grid_size(ds.encodings[i].split("|")) for i in tr]
     cfg = {"kind": a.model, "max_rows": max(r for r, _ in sizes), "max_cols": max(c for _, c in sizes), "d": a.width,
@@ -151,14 +206,36 @@ def train(a) -> None:
     k = 0.1 if cfg["backbone"] == "resnet18" else 1.0                  # pretrained layers move gently
     opt = torch.optim.AdamW([{"params": enc, "k": k}, {"params": rest, "k": 1.0}], lr=a.lr, weight_decay=0.05)
     if a.resume and ck.exists():
-        model.load_state_dict(state["model"])
-        opt.load_state_dict(state["opt"])
+        if not load_weights(model, state["model"]):
+            opt.load_state_dict(state["opt"])                         # (a model that grew the kolam head restarts AdamW)
         step, epoch = state["step"], state["epoch"]
     print(f"{a.model}: {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M params, {len(tr)} train / "
           f"{len(va)} val kolams, grids up to {cfg['max_rows']}x{cfg['max_cols']}, on {dev}")
     scaler = torch.amp.GradScaler(enabled=dev.type == "cuda")
-    val = _loader(KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed + 1, transform=to_item), va, a, False)
+    val = _loader(KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed + 1, transform=to_item,
+                               photo_floors=floors, p_photo_floor=a.photo_floor), va, a, False)
+    real = real_photos(a.real_kolams, a.size) if a.real_kolams else None
+    n_neg = round(a.batch * a.not_kolam_share)
+    neg_ds, neg_val, neg_it = None, None, iter(())
+    if n_neg:                                                         # non-kolams for the kolam head
+        neg_ds = NotKolamDataset(a.not_kolam, a.size, a.seed, a.aug)
+        nv = NotKolamDataset(a.not_kolam, a.size, a.seed + 1, a.aug, split="val")
+        neg_val = DataLoader(nv, batch_size=a.batch, num_workers=a.workers // 4, collate_fn=neg_images)
+        print(f"not-kolams: {n_neg} per batch, {len(neg_ds.files)} photos" + (f" from {a.not_kolam}" if a.not_kolam else ""))
+
+    def next_neg(epoch):
+        nonlocal neg_it
+        b = next(neg_it, None)
+        if b is None:
+            neg_ds.set_epoch(epoch)
+            neg_it = iter(DataLoader(neg_ds, batch_size=n_neg, shuffle=True, drop_last=True, collate_fn=neg_images,
+                                     num_workers=max(1, a.workers // 4), pin_memory=True))
+            b = next(neg_it)
+        return b
+
     log = open(out / "log.jsonl", "a")
+    best = max((json.loads(l)["val"]["exact"] for l in open(out / "log.jsonl") if '"val"' in l), default=-1)
+    look = va[:a.samples]
     def save(path):
         """Write to a temp file, then rename: a crash mid-save never leaves a broken checkpoint."""
         tmp = path.with_suffix(".tmp")
@@ -175,6 +252,8 @@ def train(a) -> None:
             lr = a.lr * min(1, (step + 1) / a.warmup) * 0.5 * (1 + math.cos(math.pi * min(step / a.steps, 1)))
             for g in opt.param_groups:
                 g["lr"] = lr * g["k"]
+            if n_neg:
+                b["neg"] = next_neg(epoch)
             with torch.autocast(dev.type, enabled=dev.type == "cuda"):
                 loss = model.loss(to_device(b, dev))
             opt.zero_grad(set_to_none=True)
@@ -194,11 +273,15 @@ def train(a) -> None:
                 log.write(json.dumps(r) + "\n")
                 log.flush()
             if step % a.eval_every == 0 or step == a.steps:
-                r = {"step": step, "val": evaluate(model, val, dev, a.val_n)}
+                r = {"step": step, "val": evaluate(model, val, dev, a.val_n, neg_val, real)}
                 print(json.dumps(r), flush=True)
                 log.write(json.dumps(r) + "\n")
                 log.flush()
-                save(step_ck(out, step))
+                if look:
+                    samples(model, val.dataset.dataset, look, dev, out, step)
+                if r["val"]["exact"] > best:                          # keep only last.pt and the best so far
+                    best = r["val"]["exact"]
+                    save(out / "best.pt")
             if step % a.save_every == 0 or step == a.steps:
                 save(ck)
             if step >= a.steps:
@@ -206,14 +289,10 @@ def train(a) -> None:
         epoch += 1
 
 
-def step_ck(out: Path, step: int) -> Path:
-    return out / f"step_{step:07d}.pt"
-
-
 def load(path, dev="cpu"):
     state = torch.load(path, map_location="cpu")
     model = build(state["cfg"], pretrained=False)
-    model.load_state_dict(state["model"])
+    load_weights(model, state["model"])
     return model.to(dev).eval(), state
 
 
@@ -250,10 +329,59 @@ def _redraw(enc, size: int):
         return im
 
 
+def _sheet(rows, preds, T: int = 256):
+    """One row per kolam: input | the model's reading, drawn clean | the truth (when known)."""
+    from PIL import Image, ImageDraw
+    top = 18
+    cols = 3 if any(t is not None for _, _, t in rows) else 2
+    sheet = Image.new("RGB", (cols * T, len(rows) * (T + top)), (10, 10, 12))
+    d = ImageDraw.Draw(sheet)
+    right = 0
+    for k, ((name, im, true), pred) in enumerate(zip(rows, preds)):
+        y = k * (T + top)
+        ok = "" if true is None else ("  RIGHT" if pred == true else "  wrong")
+        right += pred == true
+        d.text((6, y + 3), f"{name}{ok}   read: {len(pred) // 2}x{len(pred[0]) if pred else 0}", fill=(230, 230, 230))
+        sheet.paste(im.resize((T, T)), (0, y + top))
+        sheet.paste(_redraw(pred, T), (T, y + top))
+        if true is not None:
+            sheet.paste(_redraw(true, T), (2 * T, y + top))
+    return sheet, right
+
+
+def samples(model, ds, idx, dev, out: Path, step: int, T: int = 160) -> None:
+    """What the model reads now, for the live view (`python -m kolam_feed.watch`): fixed held-out kolams
+    under <out>/samples/: input_<k>.png and truth_<k>.png once, read_<step>_<k>.png at every eval, and
+    index.json (per eval: step and, per kolam, right or not and the grid size read)."""
+    d = out / "samples"
+    d.mkdir(exist_ok=True)
+    rows = [ds.render(i) for i in idx]
+    x = torch.stack([torch.from_numpy(np.asarray(r["image"].convert("RGB"), np.float32) / 255).permute(2, 0, 1)
+                     for r in rows])
+    model.eval()
+    with torch.no_grad(), torch.autocast(dev.type, enabled=dev.type == "cuda"):
+        preds = model.predict(x.to(dev))
+    model.train()
+    size = lambda e: f"{len(e) // 2}x{len(e[0])}" if e else "0x0"
+    items = []
+    for k, (i, r, p) in enumerate(zip(idx, rows, preds)):
+        if not (d / f"input_{k}.png").exists():
+            r["image"].convert("RGB").resize((T, T)).save(d / f"input_{k}.png")
+            _redraw(r["encoding"], T).save(d / f"truth_{k}.png")
+        _redraw(p, T).save(d / f"read_{step:07d}_{k}.png")
+        items.append({"kolam": int(i), "right": p == r["encoding"], "read": size(p), "true": size(r["encoding"])})
+    f = d / "index.json"
+    index = [e for e in (json.loads(f.read_text()) if f.exists() else []) if e["step"] != step]
+    index.append({"step": step, "items": items})
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(index))
+    os.replace(tmp, f)
+
+
 def predict_cmd(a) -> None:
     """Read kolams from image files (or from held-out data with --data) and save a sheet:
     input | what the model read (| the truth, for --data)."""
-    from PIL import Image, ImageDraw
+    from PIL import Image
     dev = _device(a.device)
     model, state = load(a.ckpt, dev)
     size = state["args"]["size"]
@@ -272,20 +400,9 @@ def predict_cmd(a) -> None:
     preds = []
     for k in range(0, len(x), 16):
         preds += model.predict(x[k:k + 16].to(dev))
-    T, top = 256, 18
-    cols = 3 if a.data else 2
-    sheet = Image.new("RGB", (cols * T, len(rows) * (T + top)), (10, 10, 12))
-    d = ImageDraw.Draw(sheet)
-    right = 0
-    for k, ((name, im, true), pred) in enumerate(zip(rows, preds)):
-        y = k * (T + top)
+    sheet, right = _sheet(rows, preds)
+    for (name, _, true), pred in zip(rows, preds):
         ok = "" if true is None else ("  RIGHT" if pred == true else "  wrong")
-        right += pred == true
-        d.text((6, y + 3), f"{name}{ok}   read: {len(pred) // 2}x{len(pred[0]) if pred else 0}", fill=(230, 230, 230))
-        sheet.paste(im.resize((T, T)), (0, y + top))
-        sheet.paste(_redraw(pred, T), (T, y + top))
-        if true is not None:
-            sheet.paste(_redraw(true, T), (2 * T, y + top))
         print(f"{name}{ok}: " + " ".join(pred) if pred else f"{name}: (empty)")
     sheet.save(a.out)
     if a.data:
@@ -359,6 +476,53 @@ def serve_cmd(a) -> None:
     HTTPServer((a.host, a.port), Handler).serve_forever()
 
 
+def export_cmd(a) -> None:
+    """A seq checkpoint -> two ONNX files for the browser (kolam_studio/reader.html, no server):
+    encoder.onnx  image (1, 3, S, S) in [0, 1] -> mem (1, N, d) and kolam (1,), the chance it is a kolam
+                  at all, run once per picture;
+    decoder.onnx  mem, ids, row, col (1, max_len) padded, pos (1,) -> logits of the token after pos (1, 11),
+                  run per token (the causal mask keeps the padding out).
+    The page works out row/col (model.token_slots) and the constrained decoding (encoding.allowed_next)."""
+    import torch.nn as nn
+    model, state = load(a.ckpt)
+    assert state["cfg"]["kind"] == "seq", "export takes a seq checkpoint"
+    size, out = state["args"]["size"], Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    class Wrap(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.m = model
+
+    class Enc(Wrap):
+        def forward(self, img):
+            mem, k = self.m.encode(img)
+            return mem, torch.sigmoid(k)
+
+    class Dec(Wrap):
+        def forward(self, mem, ids, row, col, pos):
+            m = self.m
+            x = m.tok(ids) + m.row(row.clamp(max=m.row.num_embeddings - 1)) + \
+                m.col(col.clamp(max=m.col.num_embeddings - 1))
+            i = torch.arange(ids.shape[1])
+            mask = torch.where(i[None, :] > i[:, None], float("-inf"), 0.0)
+            return m.out(m.norm(m.dec(x, mem, tgt_mask=mask)))[0].index_select(0, pos)
+
+    img = torch.rand(1, 3, size, size)
+    mem = model.memory(img)
+    ids = torch.full((1, model.max_len), len(TOK))
+    rc = torch.zeros_like(ids)
+    with torch.no_grad():
+        torch.onnx.export(Enc(), (img,), out / "encoder.onnx", input_names=["image"], output_names=["mem", "kolam"],
+                          opset_version=17, dynamo=False)
+        torch.onnx.export(Dec(), (mem, ids, rc, rc, torch.tensor([0])), out / "decoder.onnx",
+                          input_names=["mem", "ids", "row", "col", "pos"], output_names=["logits"],
+                          opset_version=17, dynamo=False)
+    meta = {"size": size, "max_len": model.max_len, "bos": len(TOK), "ckpt": str(a.ckpt)}
+    (out / "model.json").write_text(json.dumps(meta))
+    print(f"wrote {out}/encoder.onnx, decoder.onnx, model.json ({size}px)")
+
+
 def add_parsers(sub) -> None:
     t = sub.add_parser("train", help="train the seq (option A) or grid (option B) model")
     t.add_argument("src")
@@ -380,6 +544,14 @@ def add_parsers(sub) -> None:
     t.add_argument("--log-every", type=int, default=50)
     t.add_argument("--eval-every", type=int, default=2000)
     t.add_argument("--val-n", type=int, default=500, help="val kolams per evaluation")
+    t.add_argument("--not-kolam", default=None, help="folder of photos that are not kolams (e.g. Imagenette), "
+                   "mixed with drawn non-kolams (floors, dot grids, scribbles) for the kolam head")
+    t.add_argument("--photo-floor", type=float, default=0.2, help="share of kolams drawn on a --not-kolam photo "
+                   "as the floor, so photo-ness can't mean 'not a kolam' (0: off)")
+    t.add_argument("--real-kolams", default=None, help="folder of real kolam photos (no labels): every eval scores "
+                   "how many the kolam head keeps")
+    t.add_argument("--not-kolam-share", type=float, default=0.15, help="non-kolams per batch, as a share of --batch (0: off)")
+    t.add_argument("--samples", type=int, default=6, help="held-out kolams the live view shows at each eval (0: none)")
     t.add_argument("--save-every", type=int, default=100, help="steps between saves of last.pt")
     t.add_argument("--resume", action="store_true", help="continue from <out>/last.pt if it exists")
     t.set_defaults(fn=train)
@@ -412,3 +584,7 @@ def add_parsers(sub) -> None:
     v.add_argument("--port", type=int, default=8765)
     v.add_argument("--device", default="auto")
     v.set_defaults(fn=serve_cmd)
+    x = sub.add_parser("export", help="seq checkpoint -> ONNX for the in-browser reader (kolam_studio/reader.html)")
+    x.add_argument("ckpt")
+    x.add_argument("-o", "--out", default="kolam_studio/public/model")
+    x.set_defaults(fn=export_cmd)

@@ -259,4 +259,4 @@ body.scroll { overflow: auto; height: auto; min-height: 100vh; }
 }
 .drop.over { border-color: var(--yellow); color: var(--yellow); }
 .drop img { max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 4px; }
-.enc-card.seen img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 4px; image-rendering: pixelated; }
+.enc-card.seen img, .enc-card.seen canvas { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 4px; image-rendering: pixelated; }

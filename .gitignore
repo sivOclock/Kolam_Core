@@ -61,3 +61,4 @@ kolam_gen/target/
 # Training runs
 runs/
 
+kolam_studio/public/model/

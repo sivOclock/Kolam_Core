@@ -1,0 +1,395 @@
+<!doctype html>
+<!-- Live view of one training run, served by `python -m kolam_feed.watch runs/<x>`.
+     Polls log.jsonl (loss, val scores) and samples/index.json (fixed held-out kolams: picture | the
+     model's reading at every eval | truth; the slider replays the evals) every 5 s, and /stats.json
+     (GPU, CPU, RAM) every 2 s.
+     One screen, no scrolling on a laptop; stacks on narrow screens. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kolam Training</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Schoolbell&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #14201a; --board: #1d2d25; --board2: #223429; --edge: #2f4538; --chalk: #eef0e6; --dim: #93a698; --faint: #5f7466;
+    --loss: #f2d27a; --exact: #7fd6c2; --digits: #c4a3e0; --valid: #8fb6f0; --lr: #93a698; --reject: #f0a37a;
+    --ok: #7fd6c2; --warn: #f2d27a; --hot: #f08f7a;
+    --chalkfont: Schoolbell, cursive; --num: Inter, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: radial-gradient(ellipse at top, #1b2b22, var(--bg) 70%); color: var(--chalk);
+         font: 14px/1.35 var(--num); overflow: hidden; }
+  .app { height: 100vh; display: grid; grid-template-rows: auto auto 1fr; gap: 10px; padding: 12px 16px 14px; max-width: 1680px; margin: 0 auto; }
+
+  header { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font: 26px var(--chalkfont); letter-spacing: .3px; white-space: nowrap; }
+  .run { color: var(--dim); font-size: 13px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 99px; font-size: 12.5px;
+          font-weight: 600; background: var(--board2); border: 1px solid var(--edge); white-space: nowrap; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .pill.live i { background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 1.6s infinite; }
+  .pill.done i { background: var(--valid); }
+  .pill.stalled i { background: var(--hot); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(127,214,194,.6) } 100% { box-shadow: 0 0 0 9px rgba(127,214,194,0) } }
+  .progress { flex: 1; min-width: 120px; display: flex; align-items: center; gap: 10px; }
+  .track { flex: 1; height: 10px; border-radius: 99px; background: var(--board2); border: 1px solid var(--edge); overflow: hidden; }
+  .track b { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--exact), var(--valid)); transition: width .6s; }
+  .progress span { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 13px; white-space: nowrap; }
+
+  .tiles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+  .tile { background: var(--board); border: 1px solid var(--edge); border-radius: 12px; padding: 9px 13px; min-width: 0; }
+  .tile small { display: block; color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile b { display: block; font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 1px; white-space: nowrap; }
+  .tile em { font-style: normal; font-size: 12px; color: var(--faint); }
+  .up { color: var(--ok) !important; } .down { color: var(--hot) !important; }
+
+  main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 10px; }
+  .col { min-height: 0; display: grid; gap: 10px; }
+  .left { grid-template-rows: 1fr 1fr auto; }
+  .row2 { min-height: 0; display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; }
+  .panel { background: var(--board); border: 1px solid var(--edge); border-radius: 12px; padding: 10px 13px; min-height: 0;
+           min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .panel h2 { margin: 0 0 4px; font: 19px var(--chalkfont); font-weight: normal; display: flex; align-items: baseline;
+              gap: 2px 10px; flex-wrap: wrap; }
+  .panel h2 .key { margin-left: auto; font: 12px var(--num); color: var(--dim); text-align: right; }
+  .key i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin: 0 4px 0 10px; }
+  .chart { flex: 1; min-height: 0; position: relative; }
+  .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .chart text { fill: var(--faint); font: 11px var(--num); }
+  .empty { color: var(--faint); font-size: 13px; margin: auto; }
+
+  .sys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 18px; }
+  .meter { min-width: 0; }
+  .meter .top small { overflow: hidden; text-overflow: ellipsis; }
+  .meter .top { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .meter small { color: var(--dim); font-size: 12px; white-space: nowrap; }
+  .meter b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .meter .bar { height: 6px; border-radius: 99px; background: var(--board2); margin: 5px 0 4px; overflow: hidden; }
+  .meter .bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--ok); transition: width .5s, background .5s; }
+  .meter svg { width: 100%; height: 18px; display: block; }
+  .meter .sub { color: var(--faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .right .panel { height: 100%; }
+  .scrub { display: flex; align-items: center; gap: 10px; margin: 2px 0 8px; font-size: 12.5px; color: var(--dim); }
+  .scrub input { flex: 1; accent-color: var(--exact); }
+  .scrub b { color: var(--chalk); font-weight: 600; font-variant-numeric: tabular-nums; min-width: 92px; }
+  .scrub button { background: var(--board2); color: var(--chalk); border: 1px solid var(--edge); border-radius: 8px;
+                  padding: 3px 10px; font: 12px var(--num); cursor: pointer; }
+  .scrub button:hover { border-color: var(--exact); }
+  .cards { flex: 1; min-height: 0; display: grid; grid-template-columns: auto 1fr 1fr 1fr; grid-auto-rows: minmax(0, 1fr);
+           gap: 6px 8px; align-items: center; }
+  .cards .h { color: var(--dim); font-size: 12px; text-align: center; align-self: end; }
+  .cards img { width: 100%; height: 100%; min-height: 0; object-fit: contain; border-radius: 6px; display: block; }
+  .cards .read { height: 100%; min-height: 0; display: flex; justify-content: center; }
+  .cards .read img { width: auto; max-width: 100%; aspect-ratio: 1; outline: 2px solid transparent; outline-offset: 1px; }
+  .cards .read.ok img { outline-color: var(--ok); } .cards .read.bad img { outline-color: var(--hot); }
+  .verdict { font-size: 22px; line-height: 1; text-align: center; width: 26px; }
+  .verdict.ok { color: var(--ok); } .verdict.bad { color: var(--hot); }
+  .verdict small { display: block; font-size: 10px; color: var(--faint); margin-top: 3px; }
+  .bars { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 0; padding-top: 4px; }
+  .bars div { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+  .bars i { width: 100%; max-width: 30px; border-radius: 5px 5px 2px 2px; background: var(--exact); min-height: 2px; transition: height .5s; }
+  .bars span { font-size: 10.5px; color: var(--faint); margin-top: 3px; white-space: nowrap; }
+  .bars em { font-style: normal; font-size: 10.5px; color: var(--dim); margin-bottom: 2px; }
+  .bars .pair { flex: 1; width: 100%; display: flex; gap: 2px; align-items: flex-end; justify-content: center; min-height: 0; }
+  .bars .pair i { max-width: 16px; }
+  .bars .pair i.dg { background: var(--digits); }
+
+  @media (max-width: 1000px) {
+    body { overflow: auto; }
+    .app { height: auto; }
+    .progress { flex-basis: 100%; }
+    .tiles { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+    main, .row2 { grid-template-columns: 1fr; }
+    .left { grid-template-rows: 240px 240px auto; }
+    .row2 > .panel { min-height: 220px; }
+    .sys { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+    .right .panel { height: auto; }
+    .cards { grid-auto-rows: 120px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>kolam model training</h1>
+    <span class="pill" id="pill"><i></i><span>connecting</span></span>
+    <span class="run" id="run"></span>
+    <div class="progress"><div class="track"><b id="bar"></b></div><span id="prog"></span></div>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <main>
+    <div class="col left">
+      <div class="panel">
+        <h2>loss <span class="key"><i style="background:var(--loss)"></i>loss (smoothed) <i style="background:var(--lr)"></i>learning rate</span></h2>
+        <div class="chart"><svg id="loss"></svg></div>
+      </div>
+      <div class="row2">
+        <div class="panel">
+          <h2>held-out accuracy <span class="key"><i style="background:var(--exact)"></i>exact <i style="background:var(--digits)"></i>digits <i style="background:var(--valid)"></i>right size <i style="background:var(--reject)"></i>spots non-kolams <i style="background:var(--loss)"></i>keeps real photos</span></h2>
+          <div class="chart"><svg id="acc"></svg></div>
+        </div>
+        <div class="panel">
+          <h2>by grid size <span class="key"><i style="background:var(--exact)"></i>exact <i style="background:var(--digits)"></i>digits</span></h2>
+          <div class="bars" id="sizes"><span class="empty">after the first eval</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>machine <span class="key" id="gpuname"></span></h2>
+        <div class="sys" id="sys"></div>
+      </div>
+    </div>
+    <div class="col right">
+      <div class="panel">
+        <h2>what it reads <span class="key">6 kolams it never trains on, re-read at every eval</span></h2>
+        <div class="scrub"><button id="play">▶ replay</button><input id="slider" type="range" min="0" max="0" value="0">
+          <b id="scrubstep">–</b></div>
+        <div class="cards" id="cards"><span class="empty" style="grid-column:1/-1">appears at the first eval</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id)
+const stepOf = (r) => +String(r.step).split('/')[0]
+const pct = (v, d = 1) => (v == null ? '–' : `${(100 * v).toFixed(d)}%`)
+const fmt = (v, d = 0) => (v == null || isNaN(v) ? '–' : v.toFixed(d))
+
+// ---------------------------------------------------------------- charts
+function lineChart(svg, series, { ymax, ymin = 0, xmax, right } = {}) {
+  const box = svg.getBoundingClientRect()
+  const W = Math.max(box.width, 50), H = Math.max(box.height, 40)
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
+  const L = 36, R = right ? 40 : 10, T = 6, B = 18
+  const pts = series.filter((s) => !s.axis2).flatMap((s) => s.pts)
+  if (!pts.length) return (svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle">waiting for data…</text>`)
+  const xm = xmax ?? Math.max(1, ...pts.map((p) => p[0]))
+  const top = ymax ?? Math.max(1e-6, ...pts.map((p) => p[1])) * 1.08
+  const X = (x) => L + (x / xm) * (W - L - R)
+  const Y = (y, t = top, b = ymin) => T + (1 - (y - b) / (t - b)) * (H - T - B)
+  let g = ''
+  for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+    const v = ymin + (top - ymin) * f
+    g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--edge)" stroke-width="1"/>`
+    g += `<text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${ymax === 1 ? Math.round(v * 100) + '%' : +v.toPrecision(2)}</text>`
+  }
+  for (const f of [0, 0.5, 1]) g += `<text x="${X(xm * f)}" y="${H - 3}" text-anchor="${f ? (f === 1 ? 'end' : 'middle') : 'start'}">${Math.round(xm * f)}</text>`
+  for (const s of series) {
+    if (!s.pts.length) continue
+    const top2 = s.axis2 ? Math.max(1e-12, ...s.pts.map((p) => p[1])) * 1.08 : top
+    const P = s.pts.map(([x, y]) => [X(x), Y(y, top2, 0)])
+    const d = P.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join('')
+    if (s.fill) g += `<path d="${d}L${P[P.length - 1][0]},${Y(ymin)}L${P[0][0]},${Y(ymin)}Z" fill="${s.color}" opacity=".10"/>`
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.w ?? 2.2}" stroke-linejoin="round" stroke-linecap="round"
+          ${s.dash ? 'stroke-dasharray="4 4"' : ''} opacity="${s.op ?? 1}"/>`
+    if (s.dot) {
+      const [x, y] = P[P.length - 1]
+      g += `<circle cx="${x}" cy="${y}" r="4" fill="${s.color}" stroke="var(--board)" stroke-width="2"/>`
+    }
+  }
+  svg.innerHTML = g
+}
+
+function spark(svg, vals, max, color) {
+  const W = 200, H = 26
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`)
+  svg.setAttribute('preserveAspectRatio', 'none')
+  const v = vals.filter((x) => x != null)
+  if (v.length < 2) return (svg.innerHTML = '')
+  const n = 90, x = (i) => (i / (n - 1)) * W, off = n - v.length
+  const P = v.map((y, i) => `${x(i + off).toFixed(1)},${(H - 2 - (Math.min(y, max) / max) * (H - 4)).toFixed(1)}`)
+  svg.innerHTML = `<polyline points="${x(off)},${H} ${P.join(' ')} ${W},${H}" fill="${color}" opacity=".15"/>
+    <polyline points="${P.join(' ')}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`
+}
+
+const ema = (pts, k = 0.15) => { let m; return pts.map(([x, y]) => [x, (m = m == null ? y : m + k * (y - m))]) }
+
+// ---------------------------------------------------------------- training log
+let lastLogLen = 0, lastChange = Date.now(), cache = { train: [], val: [] }
+
+async function pollLog() {
+  let text
+  try { text = await (await fetch('log.jsonl?t=' + Date.now())).text() } catch { return setPill('stalled', 'no connection') }
+  if (text.length !== lastLogLen) (lastLogLen = text.length), (lastChange = Date.now())
+  const rows = text.trim().split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
+  // a resumed run appends to the same log: keep the last record for every step
+  const train = [...new Map(rows.filter((r) => r.loss != null).map((r) => [stepOf(r), r])).values()].sort((a, b) => stepOf(a) - stepOf(b))
+  const val = [...new Map(rows.filter((r) => r.val).map((r) => [r.step, r])).values()].sort((a, b) => a.step - b.step)
+  cache = { train, val }
+  render()
+}
+
+function setPill(kind, text) {
+  $('pill').className = 'pill ' + kind
+  $('pill').querySelector('span').textContent = text
+}
+
+function tile(label, value, sub = '', cls = '') {
+  return `<div class="tile"><small>${label}</small><b class="${cls}">${value}</b><em>${sub}</em></div>`
+}
+
+function render() {
+  const { train, val } = cache
+  const last = train[train.length - 1]
+  if (!last) return
+  const [s, n] = String(last.step).split('/').map(Number)
+  const done = s >= n && val.length && val[val.length - 1].step >= n
+  if (done) setPill('done', 'finished')
+  else if (Date.now() - lastChange > 90_000) setPill('stalled', 'no new steps for ' + Math.round((Date.now() - lastChange) / 60000) + ' min')
+  else setPill('live', 'training')
+  $('bar').style.width = `${(100 * s) / n}%`
+  $('prog').textContent = `${s.toLocaleString()} / ${n.toLocaleString()} steps · ${last.done} · epoch ${last.epoch}`
+
+  const lv = val[val.length - 1]?.val, pv = val[val.length - 2]?.val
+  const delta = (k) => (lv && pv ? lv[k] - pv[k] : null)
+  const arrow = (d) => (d == null ? '' : `${d >= 0 ? '▲' : '▼'} ${Math.abs(100 * d).toFixed(1)} pts since last eval`)
+  const sm = ema(train.map((r) => [stepOf(r), r.loss]))
+  const best = val.reduce((b, r) => Math.max(b, r.val.exact), 0)
+  $('tiles').innerHTML =
+    tile('held-out exact', pct(lv?.exact), arrow(delta('exact')), delta('exact') > 0 ? 'up' : delta('exact') < 0 ? 'down' : '') +
+    tile('digits right', pct(lv?.digits), arrow(delta('digits'))) +
+    tile('best exact so far', pct(best), `${val.length} evals`) +
+    tile('spots non-kolams', pct(lv?.rejects), lv?.keeps_kolams == null ? 'no non-kolams in this run'
+      : `keeps ${pct(lv.keeps_kolams, 0)} drawn` + (lv.keeps_real == null ? '' : ` · ${pct(lv.keeps_real, 0)} real kolam photos`)) +
+    tile('loss', fmt(sm[sm.length - 1]?.[1], 4), `raw ${fmt(last.loss, 4)}`) +
+    tile('images / s', fmt(last.img_s), `lr ${last.lr}`) +
+    tile('time left', done ? 'done' : last.left.replace(/^0h/, ''), `${last.elapsed.replace(/^0h/, '')} so far`)
+
+  lineChart($('loss'), [
+    { color: 'var(--lr)', pts: train.map((r) => [stepOf(r), r.lr]), axis2: true, dash: true, w: 1.4, op: 0.7 },
+    { color: 'var(--loss)', pts: train.map((r) => [stepOf(r), r.loss]), w: 1, op: 0.25 },
+    { color: 'var(--loss)', pts: sm, fill: true, dot: true },
+  ], { xmax: n })
+  lineChart($('acc'), [
+    { color: 'var(--valid)', pts: val.map((r) => [r.step, r.val.sized]), w: 1.6, op: 0.8 },
+    { color: 'var(--reject)', pts: val.filter((r) => r.val.rejects != null).map((r) => [r.step, r.val.rejects]), w: 1.6, dash: true },
+    { color: 'var(--loss)', pts: val.filter((r) => r.val.keeps_real != null).map((r) => [r.step, r.val.keeps_real]), w: 1.6, dash: true },
+    { color: 'var(--digits)', pts: val.map((r) => [r.step, r.val.digits]), dot: true },
+    { color: 'var(--exact)', pts: val.map((r) => [r.step, r.val.exact]), fill: true, dot: true },
+  ], { ymax: 1, xmax: n })
+
+  if (lv?.by_band) {                             // grouped by the longer side: 3-5, 6-8, ...
+    $('sizes').innerHTML = Object.entries(lv.by_band).map(([k, v]) =>
+      `<div title="${k} dots: ${v.n} kolams · exact ${pct(v.exact)} · digits ${pct(v.digits)}">
+         <em>${Math.round(100 * v.exact)}</em>
+         <div class="pair"><i style="height:${Math.max(2, 100 * v.exact)}%"></i><i class="dg" style="height:${Math.max(2, 100 * v.digits)}%"></i></div>
+         <span>${k}</span></div>`).join('')
+  } else if (lv?.exact_by_size) {
+    const e = Object.entries(lv.exact_by_size).sort(([a], [b]) => {
+      const [ar, ac] = a.split('x').map(Number), [br, bc] = b.split('x').map(Number)
+      return ar * ac - br * bc || ar - br
+    })
+    $('sizes').innerHTML = e.map(([k, v]) =>
+      `<div title="${k}: ${pct(v)}"><em>${Math.round(100 * v)}</em><i style="height:${Math.max(2, 100 * v)}%;opacity:${0.45 + 0.55 * v}"></i><span>${k}</span></div>`).join('')
+  }
+}
+
+// ---------------------------------------------------------------- what it reads (samples/index.json)
+let evals = [], follow = true, playing = null
+
+async function pollSamples() {
+  try { evals = await (await fetch('samples/index.json?t=' + Date.now())).json() } catch { return }
+  const sl = $('slider')
+  sl.max = Math.max(0, evals.length - 1)
+  if (follow) sl.value = sl.max
+  showEval(+sl.value)
+}
+
+function showEval(i) {
+  const e = evals[i]
+  if (!e) return
+  const right = e.items.filter((x) => x.right).length
+  $('scrubstep').textContent = `step ${e.step} · ${right}/${e.items.length} right`
+  const cards = $('cards')
+  if (!cards.querySelector('.h')) {
+    cards.innerHTML = '<span></span><span class="h">picture shown</span><span class="h">model read</span><span class="h">truth</span>' +
+      e.items.map((_, k) => `<div class="verdict"></div><img src="samples/input_${k}.png" alt="picture ${k}">
+        <div class="read"><img alt="model's reading ${k}"></div><img src="samples/truth_${k}.png" alt="truth ${k}">`).join('')
+  }
+  e.items.forEach((it, k) => {
+    const v = cards.querySelectorAll('.verdict')[k], r = cards.querySelectorAll('.read')[k]
+    v.className = 'verdict ' + (it.right ? 'ok' : 'bad')
+    v.innerHTML = (it.right ? '✓' : '✗') + `<small>${it.read}</small>`
+    v.title = it.right ? 'read exactly right' : `read a ${it.read} grid, truth is ${it.true}`
+    r.className = 'read ' + (it.right ? 'ok' : 'bad')
+    r.querySelector('img').src = `samples/read_${String(e.step).padStart(7, '0')}_${k}.png`
+  })
+}
+
+$('slider').addEventListener('input', (ev) => {
+  follow = +ev.target.value === +ev.target.max
+  showEval(+ev.target.value)
+})
+$('play').addEventListener('click', () => {
+  if (playing) return stopPlay()
+  const sl = $('slider')
+  let i = 0
+  follow = false
+  $('play').textContent = '■ stop'
+  playing = setInterval(() => {
+    sl.value = i
+    showEval(i)
+    if (++i > +sl.max) stopPlay()
+  }, 600)
+})
+function stopPlay() {
+  clearInterval(playing)
+  playing = null
+  $('play').textContent = '▶ replay'
+  follow = +$('slider').value === +$('slider').max
+}
+
+// ---------------------------------------------------------------- machine
+const hist = { gpu: [], vram: [], temp: [], power: [], cpu: [], ram: [] }
+const push = (k, v) => { hist[k].push(v); if (hist[k].length > 90) hist[k].shift() }
+const level = (f) => (f > 0.9 ? 'var(--hot)' : f > 0.7 ? 'var(--warn)' : 'var(--ok)')
+
+function meter(key, label, value, frac, sub, color) {
+  return `<div class="meter"><div class="top"><small>${label}</small><b>${value}</b></div>
+    <div class="bar"><i style="width:${Math.min(100, 100 * (frac ?? 0))}%;background:${color}"></i></div>
+    <svg data-k="${key}"></svg><div class="sub">${sub}</div></div>`
+}
+
+async function pollStats() {
+  let s
+  try { s = await (await fetch('stats.json?t=' + Date.now())).json() } catch { return }
+  const g = s.gpu
+  $('run').textContent = s.run ? '· ' + s.run.replace(/\/+$/, '').split('/').slice(-2).join('/') : ''
+  $('gpuname').textContent = g ? g.name : 'no GPU found'
+  push('gpu', g?.util); push('vram', g ? (100 * g.mem_used) / g.mem_total : null); push('temp', g?.temp)
+  push('power', g?.power); push('cpu', s.cpu); push('ram', (100 * s.ram.used) / s.ram.total)
+  const items = [
+    ['gpu', 'GPU load', g ? `${fmt(g.util)}%` : '–', g ? g.util / 100 : 0, 'how busy the GPU is', 100],
+    ['vram', 'GPU memory', g ? `${fmt(g.mem_used / 1024, 1)} GB` : '–', g ? g.mem_used / g.mem_total : 0, g ? `of ${fmt(g.mem_total / 1024, 1)} GB` : '', 100],
+    ['temp', 'GPU temp', g ? `${fmt(g.temp)}°C` : '–', g ? g.temp / 90 : 0, 'laptop GPUs throttle near 87°C', 95],
+    ['power', 'GPU power', g ? `${fmt(g.power)} W` : '–', g && g.power_cap ? g.power / g.power_cap : 0, g?.power_cap ? `limit ${fmt(g.power_cap)} W` : 'power draw right now', g?.power_cap || 100],
+    ['cpu', 'CPU', `${fmt(s.cpu)}%`, (s.cpu ?? 0) / 100, `${s.cores} threads · drawing kolams`, 100],
+    ['ram', 'RAM', `${fmt(s.ram.used, 1)} GB`, s.ram.used / s.ram.total, `of ${fmt(s.ram.total, 1)} GB (WSL)`, 100],
+  ]
+  const sys = $('sys')
+  if (!sys.childElementCount) sys.innerHTML = items.map(([k, l, v, f, sub]) => meter(k, l, v, f, sub, level(f))).join('')
+  items.forEach(([k, , v, f, sub, max], i) => {
+    const m = sys.children[i]
+    m.querySelector('b').textContent = v
+    const bar = m.querySelector('.bar i')
+    bar.style.width = `${Math.min(100, 100 * f)}%`
+    bar.style.background = level(f)
+    m.querySelector('.sub').textContent = sub
+    spark(m.querySelector('svg'), k === 'vram' || k === 'ram' ? hist[k] : hist[k], max, level(f))
+  })
+}
+
+pollLog(); pollStats(); pollSamples()
+setInterval(pollLog, 5000)
+setInterval(() => playing || pollSamples(), 5000)
+setInterval(pollStats, 2000)
+addEventListener('resize', render)
+</script>
+</body>
+</html>

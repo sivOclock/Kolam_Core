@@ -6,6 +6,9 @@
                positions of the gap lattice's 4 corners; the features under each gap (placed by the
                homography of those corners) are classified into its digit 0-8.
 
+Both also have a "kolam" head: one logit, is this picture a kolam at all? (trained with non-kolam
+pictures, data.NotKolamDataset; only kolam pictures train the reading). is_kolam(img) -> probability.
+
 Inputs are float images (B, 3, S, S) scaled to [0, 1]. Lattice points are (lj, li) = (x, y) order,
 like render_kolam's frame M.
 """
@@ -72,6 +75,13 @@ class Encoder(nn.Module):
         return f8, self.s16(f8)
 
 
+def kolam_loss(logit: torch.Tensor, n_kolams: int) -> torch.Tensor:
+    """The "is this a kolam?" head: the first n_kolams pictures of the batch are kolams, the rest are not."""
+    y = torch.zeros_like(logit)
+    y[:n_kolams] = 1
+    return 0.5 * F.binary_cross_entropy_with_logits(logit.float(), y.float())
+
+
 def _pos2d(h: int, w: int, d: int, device) -> torch.Tensor:
     """Fixed 2D sine position code, (h*w, d)."""
     q = d // 4
@@ -107,11 +117,20 @@ class SeqModel(nn.Module):
         self.dec = nn.TransformerDecoder(layer, layers)
         self.norm = nn.LayerNorm(d)
         self.out = nn.Linear(d, len(VOCAB))
+        self.kolam = nn.Linear(d, 1)
 
-    def memory(self, img):
+    def encode(self, img):
+        """-> decoder memory (B, N, d) and the is-a-kolam logit (B,)."""
         f = self.enc(img)[1]
         B, D, h, w = f.shape
-        return f.flatten(2).transpose(1, 2) + _pos2d(h, w, D, f.device)
+        return f.flatten(2).transpose(1, 2) + _pos2d(h, w, D, f.device), self.kolam(f.mean((2, 3)))[:, 0]
+
+    def memory(self, img):
+        return self.encode(img)[0]
+
+    @torch.no_grad()
+    def is_kolam(self, img) -> torch.Tensor:
+        return torch.sigmoid(self.encode(img)[1].float())
 
     def logits(self, mem, ids):
         row, col = token_slots(ids)
@@ -122,11 +141,14 @@ class SeqModel(nn.Module):
         return self.out(self.norm(self.dec(x, mem, tgt_mask=mask, tgt_key_padding_mask=ids == PAD)))
 
     def loss(self, batch):
+        """Reading loss on the kolams; plus the kolam head when the batch has non-kolams ("neg")."""
         tgt = batch["tokens"]                                         # (B, L) padded with PAD
         inp = torch.cat([torch.full_like(tgt[:, :1], BOS), tgt[:, :-1]], 1)
         inp = inp.masked_fill(inp == PAD, END)                        # positions past <end> are ignored anyway
-        lg = self.logits(self.memory(batch["image"]), inp)
-        return F.cross_entropy(lg.flatten(0, 1), tgt.flatten(), ignore_index=PAD)
+        img, neg, B = batch["image"], batch.get("neg"), len(tgt)
+        mem, k = self.encode(img if neg is None else torch.cat([img, neg]))
+        lg = self.logits(mem[:B], inp)
+        return F.cross_entropy(lg.flatten(0, 1), tgt.flatten(), ignore_index=PAD) + kolam_loss(k, B)
 
     @torch.no_grad()
     def predict(self, img) -> list[list[str]]:
@@ -197,6 +219,7 @@ class GridModel(nn.Module):
         self.corner_head = nn.Conv2d(d, 4, 1)                         # soft-argmax heatmaps on f8
         self.orient = nn.Embedding(2, 2 * d)
         self.gap_head = nn.Sequential(nn.Linear(2 * d, d), nn.ReLU(), nn.Linear(d, len(VOCAB) - 2))
+        self.kolam = nn.Linear(d, 1)
 
     def features(self, img):
         f8, f16 = self.enc(img)
@@ -212,7 +235,11 @@ class GridModel(nn.Module):
         xs = (torch.arange(w8, device=img.device) + 0.5) * S / w8
         ys = (torch.arange(h8, device=img.device) + 0.5) * S / h8
         corners = torch.stack([(p.sum(2) * xs).sum(-1), (p.sum(3) * ys).sum(-1)], -1)   # (B, 4, 2) pixels
-        return f8, f16, sz[:, :R], sz[:, R:], corners
+        return f8, f16, sz[:, :R], sz[:, R:], corners, self.kolam(t.mean(1))[:, 0]
+
+    @torch.no_grad()
+    def is_kolam(self, img) -> torch.Tensor:
+        return torch.sigmoid(self.features(img)[5].float())
 
     def read_gaps(self, f8, f16, M, pts, bidx, S):
         """Digit logits for gaps pts (N, 3) of images bidx (N,), placed in pixels by M (B, 3, 3)."""
@@ -220,19 +247,20 @@ class GridModel(nn.Module):
         q = torch.einsum("nij,nj->ni", M[bidx], P)
         xy = q[:, :2] / q[:, 2:].clamp(min=1e-6)
         g = xy / S * 2 - 1
-        x = torch.zeros(len(bidx), 2 * f8.shape[1], device=f8.device, dtype=f8.dtype)
-        for b in bidx.unique().tolist():
+        x = torch.zeros(len(bidx), 2 * f8.shape[1], device=f8.device)    # float32: under autocast f8 and f16
+        for b in bidx.unique().tolist():                                   # can come out in different precisions
             sel = bidx == b
-            gb = g[sel].view(1, 1, -1, 2).to(f8.dtype)
-            x[sel] = torch.cat([F.grid_sample(f[b:b + 1], gb, align_corners=False)[0, :, 0].T
+            gb = g[sel].view(1, 1, -1, 2)
+            x[sel] = torch.cat([F.grid_sample(f[b:b + 1], gb.to(f.dtype), align_corners=False)[0, :, 0].T.float()
                                 for f in (f8, f16)], 1)
         x = x + self.orient(pts[:, 2].long())
         return self.gap_head(x)
 
     def loss(self, batch):
-        img = batch["image"]
-        S = img.shape[-1]
-        f8, f16, lr, lc, corners = self.features(img)
+        img, neg = batch["image"], batch.get("neg")
+        S, B = img.shape[-1], len(img)
+        f8, f16, lr, lc, corners, k = self.features(img if neg is None else torch.cat([img, neg]))
+        lr, lc, corners = lr[:B], lc[:B], corners[:B]                 # gaps below index only the kolams
         rows, cols = batch["rows"], batch["cols"]
         M = batch["M"]
         lat = lattice_corners(rows, cols)
@@ -242,12 +270,12 @@ class GridModel(nn.Module):
         l_corner = 10 * F.l1_loss(corners / S, true_c / S)            # 0.1 = a tenth of the picture off
         lg = self.read_gaps(f8, f16, M, batch["gap_pts"], batch["gap_b"], S)     # read at the true positions
         l_gap = F.cross_entropy(lg, batch["gap_y"])
-        return l_gap + l_size + l_corner
+        return l_gap + l_size + l_corner + kolam_loss(k, B)
 
     @torch.no_grad()
     def predict(self, img) -> list[list[str]]:
         S = img.shape[-1]
-        f8, f16, lr, lc, corners = self.features(img)
+        f8, f16, lr, lc, corners, _ = self.features(img)
         rows, cols = lr.argmax(1) + 1, lc.argmax(1) + 1
         M = homography(lattice_corners(rows, cols), corners)
         pts, bidx = [], []

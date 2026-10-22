@@ -121,7 +121,7 @@ def main(argv=None):
     b.add_argument("--size", type=int, default=448)
     b.add_argument("--aug", default="light", help="augmentation preset: none, light, photo, real")
     b.set_defaults(fn=_bench)
-    if (sys.argv[1:] if argv is None else argv)[:1] in (["train"], ["eval"], ["predict"], ["serve"]):
+    if (sys.argv[1:] if argv is None else argv)[:1] in (["train"], ["eval"], ["predict"], ["serve"], ["export"]):
         from .train import add_parsers          # imports torch, so only when training
         add_parsers(sub)
     a = p.parse_args(argv)

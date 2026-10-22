@@ -1,6 +1,7 @@
 // Photo reader: drop a kolam picture, the trained model reads its encoding (spec §12), and the board
-// traces that kolam stroke by stroke. The model runs in `python -m kolam_feed serve <ckpt>...`;
-// the dev server proxies /api to it. Drawing is the encoding viewer's path: fromEncoding -> compile -> drawn.
+// traces that kolam stroke by stroke. The model runs in the browser (reader.ts, ONNX files from
+// `python -m kolam_feed export`), so the built site is plain static files. Drawing is the encoding
+// viewer's path: fromEncoding -> compile -> drawn.
 
 import './style.css'
 import { Board, CHALK, bezierSegments, type XY } from './board'
@@ -8,8 +9,7 @@ import { compile } from './kolam/compiler'
 import { drawn } from './kolam/drawn'
 import { fromEncoding } from './kolam/encoding'
 import { validate } from './kolam/model'
-
-const NAMES: Record<string, string> = { seq: 'A · writer (seq)', grid: 'B · reader (grid)' }
+import { loadReader, readKolam } from './reader'
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div class="enc-page">
@@ -34,7 +34,7 @@ const file = $<HTMLInputElement>('file')
 const again = $<HTMLButtonElement>('again')
 
 type Card = { board: Board; draw: (animate: boolean) => void }
-let models: string[] = []
+let ready = false
 let cards: Card[] = []
 let run = 0 // bumps on every new image so old animations stop
 
@@ -43,13 +43,14 @@ function say(text: string, error = false): void {
   status.classList.toggle('error', error)
 }
 
-async function loadModels(): Promise<void> {
+async function loadModel(): Promise<void> {
+  say('loading the model (~28 MB, once)…')
   try {
-    const r = await fetch('/api/models')
-    models = (await r.json()).map((m: { model: string }) => m.model)
-    say(`models loaded: ${models.map((m) => NAMES[m] ?? m).join(', ')}`)
-  } catch {
-    say('model server not running: python -m kolam_feed serve runs/pilot_seq/last.pt runs/pilot_grid/last.pt', true)
+    await loadReader()
+    ready = true
+    say('model ready: runs on this device, nothing is uploaded')
+  } catch (e) {
+    say(`could not load the model: ${(e as Error).message}`, true)
   }
 }
 
@@ -108,8 +109,8 @@ function card(): { box: HTMLDivElement; canvas: HTMLCanvasElement; note: HTMLDiv
 }
 
 async function read(img: Blob): Promise<void> {
-  if (!models.length) await loadModels()
-  if (!models.length) return
+  if (!ready) await loadModel()
+  if (!ready) return
   run++
   cards = []
   grid.innerHTML = ''
@@ -117,39 +118,31 @@ async function read(img: Blob): Promise<void> {
   const photo = document.createElement('img')
   photo.src = URL.createObjectURL(img)
   drop.replaceChildren(photo)
-  say(`reading with ${models.length} model${models.length === 1 ? '' : 's'}…`)
+  say('reading…')
+  let r
+  try {
+    r = await readKolam(img)
+  } catch (e) {
+    return say(`could not read it: ${(e as Error).message}`, true)
+  }
   const seen = document.createElement('div')
   seen.className = 'enc-card seen'
-  grid.append(seen)
-  const results = await Promise.all(
-    models.map(async (m) => {
-      const r = await fetch(`/api/predict?model=${m}`, { method: 'POST', body: img })
-      return { m, r: await r.json() }
-    }),
-  ).catch((e) => (say(`model server error: ${e}`, true), null))
-  if (!results) return
-  for (const { m, r } of results) {
-    if (r.error) {
-      say(r.error, true)
-      continue
-    }
-    if (!seen.childElementCount) {
-      const im = document.createElement('img')
-      im.src = r.seen
-      const cap = document.createElement('div')
-      cap.className = 'status'
-      im.onload = () => (cap.textContent = `what the model saw: ${im.naturalWidth}px square, padded + resized`)
-      seen.append(im, cap)
-    }
-    const c = card()
-    grid.append(c.box)
-    c.note.textContent = `${NAMES[m] ?? m} · ${r.ms} ms`
-    c.pre.textContent = r.encoding.length ? r.encoding.join('\n') : '(empty)'
-    const k = kolamCard(c.canvas, m === 'seq' ? 'A' : 'B', r.encoding, c.note)
-    if (k) cards.push(k)
-    else c.box.classList.add('open')
+  const cap = document.createElement('div')
+  cap.className = 'status'
+  cap.textContent = `what the model saw: ${r.seen.width}px square, padded + resized`
+  seen.append(r.seen, cap)
+  if (r.kolam < 0.5) {
+    grid.append(seen)
+    return say(`this doesn't look like a kolam (${Math.round(100 * (1 - r.kolam))}% sure) · try a photo of a kolam`, true)
   }
-  if (results.some(({ r }) => !r.error)) say('click a caption for the digits it read')
+  const c = card()
+  grid.append(seen, c.box)
+  c.note.textContent = `read in ${r.ms} ms · ${Math.round(100 * r.kolam)}% sure it's a kolam`
+  c.pre.textContent = r.encoding.length ? r.encoding.join('\n') : '(empty)'
+  const k = kolamCard(c.canvas, 'A', r.encoding, c.note)
+  if (k) cards.push(k)
+  else c.box.classList.add('open')
+  say('click the caption for the digits it read')
   cards.forEach((c) => c.draw(true))
   again.disabled = !cards.length
 }
@@ -187,4 +180,4 @@ window.addEventListener('resize', () => {
   resize = window.setTimeout(() => cards.forEach(({ board, draw }) => (board.invalidateBase(), draw(false))), 150)
 })
 document.fonts.ready.then(() => cards.forEach(({ board }) => board.invalidateBase()))
-loadModels()
+loadModel()

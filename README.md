@@ -117,6 +117,24 @@ Rust and Python agree: on 180 reference kolams saved from the first (Python) gen
 stats, and every encoding reads back to the stored label. On 1,500 kolams sampled from a 100k Rust run,
 the Python re-check found 0 failures.
 
+## Training and the browser reader
+
+Two models read a picture into the encoding (`kolam_feed/model.py`): A (seq) writes it digit by digit,
+B (grid) finds the dot grid and reads every gap at once; both also say whether the picture is a kolam
+at all. B is the one going forward (why, and the plan: `todo.md`).
+
+```bash
+python -m kolam_feed train data/enc_400k_20 --model grid --size 384 --aug real \
+    --not-kolam data/not_kolam --real-kolams data/real_kolams_line --out runs/b --resume
+python -m kolam_feed.watch runs/b        # live page: loss, accuracy by grid size, GPU/CPU/RAM, what it reads
+python -m kolam_feed export runs/b/best.pt && (cd kolam_studio && npm run build)   # dist/ = static site
+```
+
+`--not-kolam` is a folder of ordinary photos (Imagenette) mixed with drawn non-kolams; `--real-kolams`
+is a folder of real kolam photos (no labels) the not-a-kolam check is scored on. Checkpoints:
+`last.pt` (resume) and `best.pt`. The photo reader (`kolam_studio/predict.html`) runs the exported
+model with onnxruntime-web, nothing leaves the browser.
+
 ## Earlier dataset (3000-sample run, `docs/results/report.md`)
 
 Made by the first, Python generator, before the crescent-only horn rule (about half its horns are
