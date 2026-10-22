@@ -14,10 +14,11 @@ const GATES = [
   { enc: ['00', '020', '00'], d: '2', name: 'tube', says: 'the lines run side by side, wrapping both dots', mark: [1, 1] },
   { enc: ['0', '03', '0'], d: '3–8', name: 'horn', says: 'a petal tip grows out, pointing one way' },
 ] as { enc: string[]; d: string; name: string; says: string; mark?: [number, number] }[]
-// a 7 x 7 kolam from the generated data (enc_demo_100k #95243): a knot inside a band, symmetric both ways
-const START = ['0000000', '02122120', '2111112', '01111110', '1111111', '01111110', '2112112', '01122110',
-  '2112112', '01111110', '1111111', '01111110', '2111112', '02122120', '0000000']
-const NAMES = ['wall', 'cross', 'tube']
+// a 5 x 5 kolam from the generated data (enc_demo_100k #51371): crossings inside a tube band, with petal
+// horns at the sides and corners; it uses every digit, 0 to 8
+const START = ['70008', '012210', '11111', '001100', '11111', '611113', '11111', '001100', '11111', '012210', '50004']
+const NAMES = ['wall', 'cross', 'tube', 'horn', 'horn curving left', 'horn curving right', 'horn', 'horn curving left', 'horn curving right']
+const HINT_GATE: [number, number] = [5, 3] // the gate the "tap me" ring sits on: the centre
 const SYSTEMS = [
   ['random', 'grows outward from a seed, gate by gate'],
   ['substitution', 'repeats a small motif inside itself'],
@@ -45,12 +46,17 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <h2><span>2</span> A kolam is a grid of digits</h2>
       <p>Write down every gate's digit, row by row, and you have the whole kolam. Go the other way, follow
          the line through each gate, and the kolam draws itself back. Both directions are exact: one
-         kolam, one grid of digits. <b>Tap a gate</b> on the board, or a digit, to change it.</p>
+         kolam, one grid of digits.</p>
+      <div class="hw-hint" id="hint"><span aria-hidden="true">👆</span> Tap any gate, on the board or its digit</div>
       <div class="hw-play">
-        <figure class="hw-board"><div class="rd-frame"><canvas id="play" class="board"></canvas></div>
+        <figure class="hw-board"><div class="rd-frame"><canvas id="play" class="board"></canvas>
+          <span class="hw-tap" id="tap" aria-hidden="true"></span></div>
           <figcaption id="playcap"></figcaption></figure>
         <div class="hw-digits">
-          <div id="grid" class="hw-grid" aria-label="the kolam as digits"></div>
+          <div id="grid" class="hw-grid" aria-label="the kolam as digits: tap one to change it"></div>
+          <div class="hw-legend"><span class="d0">0 wall</span><span class="d1">1 cross</span><span class="d2">2 tube</span>
+            <span class="d3">3–5 horn → or ↓</span><span class="d6">6–8 horn ← or ↑</span>
+            <small>(each horn: plain, curving left, curving right)</small></div>
           <button class="rd-btn" id="reset">↺ start over</button>
         </div>
       </div>
@@ -168,40 +174,70 @@ $('gates').innerHTML = GATES.map((g, n) => `<figure class="hw-gate"><div class="
 const gateBoards = GATES.map((_, n) => new Board($<HTMLCanvasElement>(`g${n}`), ''))
 const drawGates = () => GATES.forEach((g, n) => draw(gateBoards[n], g.enc, g.mark))
 
-// 2 · the playground: a 3 x 3 kolam and its digits, linked both ways
+// 2 · the playground: a 5 x 5 kolam and its digits, linked both ways
 let enc = [...START]
 let mark: [number, number] | undefined
+let touched = false // until the first tap, a ring and a hint say "tap me"
 const play = new Board($<HTMLCanvasElement>('play'), '')
-const inner = (i: number, k: number) => (i % 2 ? k > 0 && k < enc[i].length - 1 : i > 0 && i < enc.length - 1)
+const last = () => enc.length - 1
+
+/** The digits gate (i, k) can hold: inside, any of 0-8; on the outer edge, a wall or a horn pointing
+ *  out of the grid (top and left edges: 6-8, pointing up / left; bottom and right: 3-5). */
+function choices(i: number, k: number): number[] {
+  const out = (up: boolean) => [0, ...(up ? [6, 7, 8] : [3, 4, 5])]
+  if (i % 2 === 0) return i === 0 ? out(true) : i === last() ? out(false) : [0, 1, 2, 3, 4, 5, 6, 7, 8]
+  return k === 0 ? out(true) : k === enc[i].length - 1 ? out(false) : [0, 1, 2, 3, 4, 5, 6, 7, 8]
+}
+
+/** What a digit means at gate (i, k), in words. */
+function named(d: number, i: number): string {
+  if (d < 3) return NAMES[d]
+  const way = i % 2 ? (d < 6 ? 'right' : 'left') : d < 6 ? 'down' : 'up'
+  return `${NAMES[d]}, pointing ${way}`
+}
 
 function render(): void {
   draw(play, enc, mark)
   $('grid').innerHTML = enc
-    .map((row, i) => `<div class="hw-row ${i % 2 ? 'lr' : 'ud'}">${[...row].map((d, k) =>
-      `<button data-i="${i}" data-k="${k}" class="d${d}${mark && mark[0] === i && mark[1] === k ? ' on' : ''}${inner(i, k) && +d <= 2 ? '' : ' edge'}"
-        aria-label="gate row ${i + 1}, ${k + 1}: ${NAMES[+d] ?? 'horn'}">${d}</button>`).join('')}</div>`)
+    .map((row, i) => `<div class="hw-row ${i % 2 ? 'lr' : 'ud'}">${[...row].map((d, k) => {
+      const hint = !touched && i === HINT_GATE[0] && k === HINT_GATE[1] ? ' pulse' : ''
+      const on = mark && mark[0] === i && mark[1] === k ? ' on' : ''
+      const edge = choices(i, k).length < 9 ? ' edge' : ''
+      return `<button data-i="${i}" data-k="${k}" class="d${d}${on}${edge}${hint}" aria-label="gate ${i + 1}.${k + 1}: ${named(+d, i)}">${d}</button>`
+    }).join('')}</div>`)
     .join('')
   $('grid').querySelectorAll<HTMLButtonElement>('button').forEach((b) => (b.onclick = () => flip(+b.dataset.i!, +b.dataset.k!)))
   $<HTMLButtonElement>('reset').disabled = enc.join() === START.join() // nothing to undo yet
   const h = fromEncoding(enc)
   const lines = compile(h).strokes.length
   $('playcap').textContent = mark
-    ? `that gate is now a ${NAMES[+enc[mark[0]][mark[1]]]}: ${lines} line${lines === 1 ? '' : 's'} in all`
+    ? `that gate is now a ${named(+enc[mark[0]][mark[1]], mark[0])}: ${lines} line${lines === 1 ? '' : 's'} in all`
     : `${h.rows} × ${h.cols} dots, ${lines} line${lines === 1 ? '' : 's'}`
+  // the "tap me" ring sits on the hint gate until the first tap
+  const tap = $('tap')
+  tap.hidden = touched
+  const [x, y] = play.px(gapAt(HINT_GATE[0], HINT_GATE[1]))
+  Object.assign(tap.style, { left: `${x}px`, top: `${y}px`, width: `${play.s * 1.3}px`, height: `${play.s * 1.3}px` })
 }
 
-/** Change one inner gate: wall -> cross -> tube -> wall (edge gates stay walls here). */
+/** Step gate (i, k) to its next digit that can be drawn (one that can't is skipped). */
 function flip(i: number, k: number): void {
-  if (!inner(i, k) || +enc[i][k] > 2) return // horns stay as they are
+  if (!touched) ((touched = true), ($('hint').innerHTML = 'Keep tapping: each tap steps the gate to its next digit, 0 to 8'))
   const before = enc[i]
-  enc[i] = before.slice(0, k) + String((+before[k] + 1) % 3) + before.slice(k + 1)
-  mark = [i, k]
-  try {
-    render()
-  } catch {
-    enc[i] = before // a combination that cannot be drawn: keep the old one
-    render()
+  const opts = choices(i, k)
+  const at = opts.indexOf(+before[k])
+  for (let n = 1; n <= opts.length; n++) {
+    const d = opts[(at + n) % opts.length]
+    enc[i] = before.slice(0, k) + d + before.slice(k + 1)
+    try {
+      compile(fromEncoding(enc)) // drawable?
+      break
+    } catch {
+      enc[i] = before
+    }
   }
+  mark = [i, k]
+  render()
 }
 
 $<HTMLCanvasElement>('play').addEventListener('click', (e) => {
@@ -209,8 +245,7 @@ $<HTMLCanvasElement>('play').addEventListener('click', (e) => {
   const [x, y] = [e.clientX - r.left, e.clientY - r.top]
   let best: [number, number] | null = null
   let dist = Infinity
-  enc.forEach((row, i) => [...row].forEach((digit, k) => {
-    if (!inner(i, k) || +digit > 2) return
+  enc.forEach((row, i) => [...row].forEach((_, k) => {
     const [gx, gy] = play.px(gapAt(i, k))
     const d = Math.hypot(gx - x, gy - y)
     if (d < dist) (dist = d), (best = [i, k])
