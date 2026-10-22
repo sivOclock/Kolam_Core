@@ -245,6 +245,9 @@ body.scroll { overflow: auto; height: auto; min-height: 100vh; }
 
 /* ── Kolam Reader (index.html): one column on a phone, side by side from 720px ─────────── */
 .rd [hidden] { display: none !important; }
+/* the studio's boards take every touch (for drawing); on these pages a finger must still scroll the page,
+   while a tap stays a tap (the gates in How it works) */
+body.reader .board { touch-action: manipulation; }
 body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(--bg-card); font-family: system-ui, sans-serif; }
 .rd { max-width: 980px; margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 16px 28px; display: flex; flex-direction: column; gap: 18px; }
 .rd-head { position: relative; }
@@ -348,12 +351,16 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .hw-digits { display: flex; flex-direction: column; gap: 12px; align-items: center; }
 .hw-grid { display: flex; flex-direction: column; gap: 4px; align-items: center; font: 600 18px ui-monospace, monospace; }
 .hw-row { display: flex; gap: 4px; }
-.hw-row.ud { padding: 0 19px; }           /* up/down rows sit between the left/right gates, like the lattice */
-.hw-row button { width: 34px; height: 34px; border-radius: 8px; border: 1.5px solid transparent; cursor: pointer;
+.hw-row.ud { padding: 0 18px; }           /* up/down rows sit between the left/right gates, like the lattice */
+.hw-row button { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid transparent; cursor: pointer;
                  background: var(--bg-card); color: var(--chalk); font: inherit; }
 .hw-row button.d1 { color: var(--cyan); } .hw-row button.d2 { color: var(--green); }
 .hw-row button.edge { color: #50605b; cursor: default; }
 .hw-row button.on { border-color: var(--yellow); }
+.hw-row button.d3, .hw-row button.d4, .hw-row button.d5, .hw-row button.d6, .hw-row button.d7, .hw-row button.d8 { color: var(--pink); }
+#reset:disabled { opacity: .4; cursor: default; }
+.hw-fade { animation: hw-fade .7s ease; }
+@keyframes hw-fade { from { opacity: .15; } to { opacity: 1; } }
 .hw-row button:not(.edge):hover { border-color: var(--muted); }
 .hw-math { background: var(--bg-card); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 .hw-formula { font: 600 20px ui-monospace, monospace; color: var(--yellow) !important; text-align: center; }

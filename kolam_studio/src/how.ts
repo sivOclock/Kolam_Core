@@ -14,7 +14,9 @@ const GATES = [
   { enc: ['00', '020', '00'], d: '2', name: 'tube', says: 'the lines run side by side, wrapping both dots', mark: [1, 1] },
   { enc: ['0', '03', '0'], d: '3–8', name: 'horn', says: 'a petal tip grows out, pointing one way' },
 ] as { enc: string[]; d: string; name: string; says: string; mark?: [number, number] }[]
-const START = ['000', '0110', '111', '0110', '111', '0110', '000'] // 3 x 3 dots, every inner gate a cross
+// a 7 x 7 kolam from the generated data (enc_demo_100k #95243): a knot inside a band, symmetric both ways
+const START = ['0000000', '02122120', '2111112', '01111110', '1111111', '01111110', '2112112', '01122110',
+  '2112112', '01111110', '1111111', '01111110', '2111112', '02122120', '0000000']
 const NAMES = ['wall', 'cross', 'tube']
 const SYSTEMS = [
   ['random', 'grows outward from a seed, gate by gate'],
@@ -176,10 +178,11 @@ function render(): void {
   draw(play, enc, mark)
   $('grid').innerHTML = enc
     .map((row, i) => `<div class="hw-row ${i % 2 ? 'lr' : 'ud'}">${[...row].map((d, k) =>
-      `<button data-i="${i}" data-k="${k}" class="d${d}${mark && mark[0] === i && mark[1] === k ? ' on' : ''}${inner(i, k) ? '' : ' edge'}"
+      `<button data-i="${i}" data-k="${k}" class="d${d}${mark && mark[0] === i && mark[1] === k ? ' on' : ''}${inner(i, k) && +d <= 2 ? '' : ' edge'}"
         aria-label="gate row ${i + 1}, ${k + 1}: ${NAMES[+d] ?? 'horn'}">${d}</button>`).join('')}</div>`)
     .join('')
   $('grid').querySelectorAll<HTMLButtonElement>('button').forEach((b) => (b.onclick = () => flip(+b.dataset.i!, +b.dataset.k!)))
+  $<HTMLButtonElement>('reset').disabled = enc.join() === START.join() // nothing to undo yet
   const h = fromEncoding(enc)
   const lines = compile(h).strokes.length
   $('playcap').textContent = mark
@@ -189,7 +192,7 @@ function render(): void {
 
 /** Change one inner gate: wall -> cross -> tube -> wall (edge gates stay walls here). */
 function flip(i: number, k: number): void {
-  if (!inner(i, k)) return
+  if (!inner(i, k) || +enc[i][k] > 2) return // horns stay as they are
   const before = enc[i]
   enc[i] = before.slice(0, k) + String((+before[k] + 1) % 3) + before.slice(k + 1)
   mark = [i, k]
@@ -206,15 +209,25 @@ $<HTMLCanvasElement>('play').addEventListener('click', (e) => {
   const [x, y] = [e.clientX - r.left, e.clientY - r.top]
   let best: [number, number] | null = null
   let dist = Infinity
-  enc.forEach((row, i) => [...row].forEach((_, k) => {
-    if (!inner(i, k)) return
+  enc.forEach((row, i) => [...row].forEach((digit, k) => {
+    if (!inner(i, k) || +digit > 2) return
     const [gx, gy] = play.px(gapAt(i, k))
     const d = Math.hypot(gx - x, gy - y)
     if (d < dist) (dist = d), (best = [i, k])
   }))
   if (best && dist < play.s * 1.1) flip(best[0], best[1])
 })
-$('reset').onclick = () => ((enc = [...START]), (mark = undefined), render())
+/** Back to the original kolam: the board comes into view and the kolam fades back in. */
+$('reset').onclick = () => {
+  enc = [...START]
+  mark = undefined
+  const c = $('play')
+  c.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  c.classList.remove('hw-fade')
+  void c.offsetWidth // restart the fade
+  c.classList.add('hw-fade')
+  render()
+}
 
 // 3 · the data
 $('systems').innerHTML = SYSTEMS.map(([s, says]) => `<figure><img src="./how/system_${s}.jpg" alt="a kolam made by the ${s} system" loading="lazy">
