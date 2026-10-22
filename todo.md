@@ -31,13 +31,15 @@ Not 50M: ~3x slower to train on a 4 GB GPU, ~200 MB in the browser, and undertra
 Bigger only if the loss flattens while still high.
 
 **Data: 3-5M training images over 2-3 nights.** 2M unique kolams (kolam_gen, ~30 min), each drawn
-fresh every time it is used (angle, floor, ink, glare, photo floors). ~1.5M images a night. Stop when
+fresh every time it is used (angle, floor, ink, glare). ~1.5M images a night. Stop when
 the held-out checks stop improving for a night, especially the 15-17 and 18-20 bands.
 
 **Not a kolam.** One yes/no head on the shared encoder (no change to the encoding). 15% of every
 batch: Imagenette photos (13,394) plus drawn hard cases (empty floors, dot grids with no lines,
-scribbles). 20% of kolams are drawn on a dulled photo floor, so "looks like a photo" can't mean "not
-a kolam" (the first try learned exactly that: it rejected the real coaster photo, 0.002). Checked at
+scribbles). Those photos are only ever non-kolam examples, never a kolam's background (kolams are drawn
+on real-looking floors: cement, red oxide, tiles, granite, sand). The first try learned "looks like a
+photo = not a kolam" (it rejected the real coaster photo, 0.002); kolams in the `real` photo look fixed
+it, and it is checked at
 every eval on 31 real line-kolam photos (`data/real_kolams_line`: 30 from Wikimedia Commons, licences
 in its `SOURCES.json`, plus our coaster; local only, not committed). Rangoli: left out for now.
 
@@ -52,7 +54,7 @@ pass 1 finds small kolams. 448-512 px only if the 18-20 band stays weak.
       (cPanel ok, `.htaccess` for .wasm/.onnx). Seq model only so far.
 - [x] Live training page: `python -m kolam_feed.watch runs/<x>` (loss, accuracy by size band,
       not-kolam checks, GPU/CPU/RAM, replay of what it reads)
-- [x] Not-a-kolam head, non-kolam data, photo floors, real-photo check
+- [x] Not-a-kolam head, non-kolam data, real-photo check
 - [x] GPU laptop set up: everything in `~/kolam_core_model` (WSL), `scripts/gpu/launch.sh` + `jobs.sh`
 - [x] 400k kolams up to 20 x 20 generated there (5.7 min)
 - [x] B-M: `--backbone resnet34 --ctx-layers 4` = 11.6M params; probe: 44 images/s, 2.9 of 4 GB

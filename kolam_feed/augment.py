@@ -80,8 +80,6 @@ class Augment:
     p_glare: float = 0.0            # flash hotspot, sun sheen on a shiny floor, or a soft wash
     p_surface: float = 0.0          # a real-world floor behind the kolam
     surfaces: tuple = ()            # floors to pick from (default: all of SURFACES)
-    p_photo_floor: float = 0.0      # a blurred, dulled crop of a real photo as the floor (from `photos`), so
-    photos: tuple = ()              #   "looks like a photo" never tells a kolam from a non-kolam
     p_ink: float = 0.0              # a real ink colour: rice flour, chalk, turmeric, kumkum, rangoli powders
     p_multi: float = 0.0            # several ink colours across the kolam
     p_thick: float = 0.0            # a thicker line
@@ -134,9 +132,7 @@ class Augment:
             a = _chalk(a, rng, bg)
         surface, new_ink, multi, thick = (rng.random() < p for p in (self.p_surface, self.p_ink, self.p_multi,
                                                                        self.p_thick))
-        if self.photos and rng.random() < self.p_photo_floor:
-            surface = _photo_floor(a.shape[:2], rng, self.photos)
-        if surface is not False or new_ink or multi or thick:
+        if surface or new_ink or multi or thick:
             a = self._repaint(a, rng, bg, ink, surface, new_ink, multi, thick)
         if rng.random() < self.p_debris:
             a = _debris(a, rng)
@@ -184,12 +180,8 @@ class Augment:
             k = 3 if a.shape[0] < 300 else 5
             m = Image.fromarray((alpha * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(k))
             alpha = np.asarray(m.filter(ImageFilter.GaussianBlur(0.6)), np.float32) / 255
-        if isinstance(surface, np.ndarray):                         # a photo floor, already made
-            floor = surface
-        elif surface:
-            floor = _surface(a.shape[:2], rng, rng.choice(self.surfaces or SURFACES))
-        else:
-            floor = np.broadcast_to(bg, a.shape).astype(np.float32)
+        floor = _surface(a.shape[:2], rng, rng.choice(self.surfaces or SURFACES)) if surface else \
+            np.broadcast_to(bg, a.shape).astype(np.float32)
         lum = float((floor @ [0.3, 0.59, 0.11]).mean())
         if multi:
             cols = [_ink_colour(rng, lum, coloured=True) for _ in range(int(rng.integers(2, 5)))]
@@ -356,20 +348,6 @@ def _ink_colour(rng, floor_lum: float, coloured: bool = False) -> np.ndarray:
 
 def _grain(shape, rng, amount: float) -> np.ndarray:
     return rng.normal(0, amount, shape).astype(np.float32)
-
-
-def _photo_floor(shape, rng, photos) -> np.ndarray:
-    """A random photo crop as a floor: blurred and pulled towards its mean colour, so a kolam drawn on
-    it stays readable while the floor still looks photographic."""
-    im = Image.open(photos[int(rng.integers(len(photos)))]).convert("RGB")
-    w, h = im.size
-    c = int(min(w, h) * rng.uniform(0.5, 1.0))
-    x, y = int(rng.integers(0, w - c + 1)), int(rng.integers(0, h - c + 1))
-    im = im.crop((x, y, x + c, y + c)).resize((shape[1], shape[0]), Image.BILINEAR)
-    im = im.filter(ImageFilter.GaussianBlur(rng.uniform(1.5, 5.0) * shape[0] / 384))
-    a = np.asarray(im, np.float32)
-    k = rng.uniform(0.45, 0.8)
-    return a * (1 - k) + a.mean((0, 1)) * k
 
 
 def _surface(shape, rng, kind: str) -> np.ndarray:

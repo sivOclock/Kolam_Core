@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -70,8 +69,8 @@ class KolamDataset:
     """Map-style dataset for torch.utils.data.DataLoader: item i is kolam i, augmented from
     (seed, epoch, i) (kolam_feed/augment.py): a random style when drawn (style=True), then maybe a
     turn/mirror (the label turned with it) and image changes from `augment` (a preset name: "none",
-    "light", "photo", or an Augment). photo_floors: photo files; p_photo_floor of the kolams are drawn
-    on one of them. Call set_epoch(e) before each epoch for new looks (with
+    "light", "photo", or an Augment). Kolams are only ever drawn on floors (augment.SURFACES), never
+    on the non-kolam photos (those are NotKolamDataset's alone). Call set_epoch(e) before each epoch for new looks (with
     persistent_workers=True the workers keep their own copy, so leave that off). style=False and
     augment="none" give the plain default picture. `transform(item) -> anything` runs last, e.g. to
     apply an image processor and tokenizer."""
@@ -79,13 +78,10 @@ class KolamDataset:
     vocab = VOCAB
 
     def __init__(self, src: str | Path, size: int = 448, seed: int = 0, style: bool = True,
-                 augment: str | Augment = "light", transform=None, photo_floors: list | None = None,
-                 p_photo_floor: float = 0.2):
+                 augment: str | Augment = "light", transform=None):
         self.encodings, self.systems = load_encodings(src)
         self.size, self.seed, self.style, self.epoch = size, seed, style, 0
         self.aug = Augment.preset(augment) if isinstance(augment, str) else augment
-        if photo_floors:                         # some kolams drawn on real photo floors (Augment.p_photo_floor)
-            self.aug = replace(self.aug, p_photo_floor=p_photo_floor, photos=tuple(map(str, photo_floors)))
         self.transform = transform
 
     def set_epoch(self, epoch: int) -> None:

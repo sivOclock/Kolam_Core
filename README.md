@@ -141,8 +141,8 @@ from the hypergraph exactly. Why this form and how lines are read back: spec §1
 ### Feeding and training: `kolam_feed` (Python)
 
 - `KolamDataset` renders each kolam on the fly in a new look every epoch (style, turn, camera, floor,
-  ink, glare, photo floors); `NotKolamDataset` gives photos and drawn non-kolams for the
-  is-it-a-kolam head.
+  ink, glare); `NotKolamDataset` gives photos and drawn non-kolams for the is-it-a-kolam head
+  (the photos are only ever non-kolam examples, never a kolam's background).
 - Two models (`model.py`): A writes the digits one by one under constrained decoding; B finds the
   dot grid and reads every gap at once. B is the one going forward (`todo.md`).
 - `verify` re-checks kolam_gen's output independently; Rust and Python give the same answers on the

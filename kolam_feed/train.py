@@ -206,9 +206,7 @@ def train(a) -> None:
     dev = _device(a.device)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    floors = NotKolamDataset(a.not_kolam, split="train").files if a.not_kolam and a.photo_floor else None
-    ds = KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed, transform=to_item, photo_floors=floors,
-                      p_photo_floor=a.photo_floor)
+    ds = KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed, transform=to_item)
     tr, va = split(ds, a.max_dots)
     sizes = [grid_size(ds.encodings[i].split("|")) for i in tr]
     cfg = {"kind": a.model, "max_rows": max(r for r, _ in sizes), "max_cols": max(c for _, c in sizes), "d": a.width,
@@ -567,9 +565,8 @@ def add_parsers(sub) -> None:
     t.add_argument("--eval-every", type=int, default=2000)
     t.add_argument("--val-n", type=int, default=500, help="val kolams per evaluation")
     t.add_argument("--not-kolam", default=None, help="folder of photos that are not kolams (e.g. Imagenette), "
-                   "mixed with drawn non-kolams (floors, dot grids, scribbles) for the kolam head")
-    t.add_argument("--photo-floor", type=float, default=0.2, help="share of kolams drawn on a --not-kolam photo "
-                   "as the floor, so photo-ness can't mean 'not a kolam' (0: off)")
+                   "mixed with drawn non-kolams (floors, dot grids, scribbles) for the kolam head; used only "
+                   "as non-kolam examples, never as a kolam's background")
     t.add_argument("--real-kolams", default=None, help="folder of real kolam photos (no labels): every eval scores "
                    "how many the kolam head keeps")
     t.add_argument("--not-kolam-share", type=float, default=0.15, help="non-kolams per batch, as a share of --batch (0: off)")
