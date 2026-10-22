@@ -47,7 +47,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <p>Write down every gate's digit, row by row, and you have the whole kolam. Go the other way, follow
          the line through each gate, and the kolam draws itself back. Both directions are exact: one
          kolam, one grid of digits.</p>
-      <div class="hw-hint" id="hint"><span aria-hidden="true">👆</span> Tap any gate, on the board or its digit</div>
+      <div class="hw-hint" id="hint"><span aria-hidden="true">👆</span> Tap on the kolam and see it change</div>
       <div class="hw-play">
         <figure class="hw-board"><div class="rd-frame"><canvas id="play" class="board"></canvas>
           <span class="hw-tap" id="tap" aria-hidden="true"></span></div>
@@ -222,7 +222,7 @@ function render(): void {
 
 /** Step gate (i, k) to its next digit that can be drawn (one that can't is skipped). */
 function flip(i: number, k: number): void {
-  if (!touched) ((touched = true), ($('hint').innerHTML = 'Keep tapping: each tap steps the gate to its next digit, 0 to 8'))
+  if (!touched) ((touched = true), ($('hint').innerHTML = 'Keep tapping, and watch the kolam and its numbers change together'))
   const before = enc[i]
   const opts = choices(i, k)
   const at = opts.indexOf(+before[k])
