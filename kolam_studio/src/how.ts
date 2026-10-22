@@ -74,23 +74,60 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </section>
 
     <section class="hw-sec">
-      <h2><span>4</span> Learning to read</h2>
-      <div class="hw-flow" aria-label="photo, eyes, writer, digits, kolam">
-        <div><img src="./how/look_4.jpg" alt=""><b>photo</b></div><i>→</i>
-        <div><span class="hw-icon">◉</span><b>eyes</b><small>looks over the whole picture</small></div><i>→</i>
-        <div><span class="hw-icon">✎</span><b>writer</b><small>writes the digits, one at a time</small></div><i>→</i>
-        <div><code>0110<br>111<br>0110</code><b>digits</b></div><i>→</i>
-        <div><img src="./how/look_1.jpg" alt=""><b>kolam</b></div>
+      <h2><span>4</span> The model that reads</h2>
+      <p>Two networks, one after the other: a <b>ResNet</b> looks at the photo, and a <b>transformer
+         decoder</b> writes the digits.</p>
+      <div class="hw-arch">
+        <figure class="hw-stage"><img src="./how/look_4.jpg" alt="a kolam photo"><figcaption><b>photo</b>
+          <small>shrunk to a 192 × 192 square</small></figcaption></figure>
+        <i class="hw-arrow">→</i>
+        <figure class="hw-stage"><div class="hw-resnet"><span>edges</span><span>curves</span><span>dots &amp; gates</span></div>
+          <figcaption><b>ResNet</b><small>the eyes: each layer sees a bigger patch, from strokes up to whole gates</small></figcaption></figure>
+        <i class="hw-arrow">→</i>
+        <figure class="hw-stage"><div class="hw-fmap" id="fmap"></div>
+          <figcaption><b>a 12 × 12 map</b><small>what is where in the picture</small></figcaption></figure>
+        <i class="hw-arrow">→</i>
+        <figure class="hw-stage"><div class="hw-writer"><code id="typing"></code>
+          <div class="hw-rule"><small>at the top edge, only these fit:</small><div id="rule"></div></div></div>
+          <figcaption><b>transformer decoder</b><small>the writer: one digit at a time, looking back at the map
+          and at what it has written; rules let through only digits that still make a kolam</small></figcaption></figure>
+        <i class="hw-arrow">→</i>
+        <figure class="hw-stage"><div class="rd-frame hw-mini"><canvas id="mini" class="board"></canvas></div>
+          <figcaption><b>kolam</b><small>the digits, drawn back</small></figcaption></figure>
       </div>
-      <p>The model has two parts. The <b>eyes</b> look over the photo and note where the dots and lines
-         are. The <b>writer</b> then writes the digits one by one; at each step, the rules of section 2
-         only let it pick digits that still make a real kolam, so its answer is always a kolam.</p>
-      <p>Training is practice with the answers at the back of the book. It is shown a generated photo,
-         writes its guess, and is told how far each digit was from the true one; it adjusts a little and
-         tries the next photo. Millions of photos later, we test it on kolams it has never seen, which is
-         how the examples on the first page were chosen: it reads each of them exactly.</p>
-      <p>A second, larger model is training now on bigger kolams, up to 20 × 20 dots, and on photos that
-         look more like real floors.</p>
+    </section>
+
+    <section class="hw-sec">
+      <h2><span>5</span> How it learned</h2>
+      <div class="hw-train">
+        <div class="hw-loop" aria-label="the training loop">
+          <div><b>1</b> a generated photo, with its true digits</div>
+          <div><b>2</b> the model writes its guess</div>
+          <div><b>3</b> each digit is compared with the truth</div>
+          <div><b>4</b> the model is nudged to do a little better</div>
+          <span class="hw-again">↻ and again, with the next photo</span>
+        </div>
+        <figure class="hw-chart"><svg id="chart" viewBox="0 0 360 220" role="img"
+          aria-label="training: mistakes fall while exact readings rise"></svg>
+          <figcaption id="chartcap"></figcaption></figure>
+      </div>
+      <p>This is the real record of the model on the first page. The yellow line is how wrong its guesses
+         were; the green dots are how many kolams it had <b>never seen</b> it read exactly, checked along
+         the way. A bigger model is now practising on millions of photos and kolams up to 20 × 20 dots.</p>
+    </section>
+
+    <section class="hw-sec">
+      <h2><span>6</span> All inside Chrome</h2>
+      <div class="hw-chrome">
+        <div><span class="hw-icon">⬇</span><b>once</b><small>the model downloads to your browser the first time</small></div>
+        <i class="hw-arrow">→</i>
+        <div><span class="hw-icon">⚙</span><b>in Chrome</b><small>it runs on WebAssembly, in a background thread</small></div>
+        <i class="hw-arrow">→</i>
+        <div><span class="hw-icon">🔒</span><b>on your device</b><small>your photo never leaves it</small></div>
+      </div>
+      <p>The models are optimized to run in Chrome: converted to a compact format (ONNX) and run by
+         WebAssembly in a background thread, so everything happens inside Chrome itself. There is no
+         server doing the work, and the page stays smooth while the model reads.</p>
     </section>
 
     <footer class="rd-foot">
@@ -184,9 +221,54 @@ $('systems').innerHTML = SYSTEMS.map(([s, says]) => `<figure><img src="./how/sys
   <figcaption><b>${s === 'wfc' ? 'tiles' : s}</b><small>${says}</small></figcaption></figure>`).join('')
 $('looks').innerHTML = [1, 2, 3, 4, 5, 6].map((n) => `<img src="./how/look_${n}.jpg" alt="the same kolam, look ${n}" loading="lazy">`).join('')
 
+// 4 · the model: a lit-up feature map, the writer typing the digits, the rule at the top edge
+$('fmap').innerHTML = Array.from({ length: 144 }, (_, n) => {
+  const [r, c] = [Math.floor(n / 12), n % 12]
+  const on = r > 1 && r < 10 && c > 1 && c < 10 && (r + c) % 2 === 0
+  return `<i style="opacity:${on ? 0.55 + 0.45 * Math.abs(Math.sin(n)) : 0.08 + 0.1 * Math.abs(Math.cos(n))}"></i>`
+}).join('')
+$('rule').innerHTML = [...'012345678'].map((d) => `<b class="${'0678'.includes(d) ? 'ok' : ''}">${d}</b>`).join('')
+const mini = new Board($<HTMLCanvasElement>('mini'), '')
+const typing = $('typing')
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
+let typed = 0
+const text = START.join('\n')
+function type(): void {
+  if (calm) return void (typing.textContent = text)
+  typed = typed >= text.length + 24 ? 0 : typed + 1 // a short rest at the end, then again
+  typing.textContent = text.slice(0, Math.min(typed, text.length)) + (typed < text.length ? '▍' : '')
+}
+setInterval(type, 140)
+
+// 5 · the real training record of the served model
+async function chart(): Promise<void> {
+  const t: { loss: [number, number][]; val: [number, number, number][]; images_per_step: number } =
+    await (await fetch('./how/training.json')).json()
+  const W = 360, H = 220, L = 34, R = 34, T = 14, B = 30
+  const xmax = t.loss[t.loss.length - 1][0], lmax = Math.max(...t.loss.map((p) => p[1]))
+  const X = (s: number) => L + (s / xmax) * (W - L - R)
+  const YL = (v: number) => T + (1 - v / lmax) * (H - T - B)
+  const YA = (v: number) => T + (1 - v) * (H - T - B)
+  let g = ''
+  for (const f of [0, 0.5, 1]) g += `<line x1="${L}" x2="${W - R}" y1="${YA(f)}" y2="${YA(f)}" class="grid"/>
+    <text x="${W - R + 4}" y="${YA(f) + 4}" class="acc">${Math.round(100 * f)}%</text>`
+  g += `<path d="${t.loss.map(([s, v], i) => `${i ? 'L' : 'M'}${X(s).toFixed(1)},${YL(v).toFixed(1)}`).join('')}" class="loss"/>`
+  g += t.val.map(([s, e]) => `<circle cx="${X(s)}" cy="${YA(e)}" r="5" class="exact"/>
+    <text x="${X(s)}" y="${YA(e) - 10}" class="acc" text-anchor="middle">${Math.round(100 * e)}%</text>`).join('')
+  const imgs = (s: number) => (s * t.images_per_step).toLocaleString()
+  g += `<text x="${L}" y="${H - 8}" class="ax">0</text><text x="${W - R}" y="${H - 8}" class="ax" text-anchor="end">${imgs(xmax)} photos</text>
+        <text x="${L - 6}" y="${T + 4}" class="lossl" text-anchor="end">wrong</text>`
+  $('chart').innerHTML = g
+  const [first, last] = [t.val[0], t.val[t.val.length - 1]]
+  $('chartcap').textContent = `unseen kolams read exactly: ${Math.round(100 * first[1])}% after ${imgs(first[0])} photos, ` +
+    `${Math.round(100 * last[1])}% after ${imgs(last[0])}`
+}
+chart()
+
 function drawAll(): void {
   drawGates()
   render()
+  draw(mini, START)
 }
 let resize = 0
 window.addEventListener('resize', () => {
@@ -194,6 +276,7 @@ window.addEventListener('resize', () => {
   resize = window.setTimeout(() => {
     gateBoards.forEach((b) => b.invalidateBase())
     play.invalidateBase()
+    mini.invalidateBase()
     drawAll()
   }, 150)
 })

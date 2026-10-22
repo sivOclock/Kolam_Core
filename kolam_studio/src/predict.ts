@@ -59,7 +59,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </section>
 
     <footer class="rd-foot">
-      <p><a href="./how.html">How it works</a> · <a href="https://github.com/sivOclock/Kolam_Core" target="_blank" rel="noopener">GitHub</a></p>
+      <p><a href="https://github.com/sivOclock/Kolam_Core" target="_blank" rel="noopener">GitHub</a></p>
       <p class="rd-small">Currently serving a smaller model for speed. A bigger, better model is on its way.</p>
     </footer>
   </main>`

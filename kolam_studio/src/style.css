@@ -363,17 +363,58 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .hw-four figcaption { color: var(--muted); font-size: 13px; }
 .hw-four figcaption b { color: var(--chalk); display: block; font-size: 14px; }
 .hw-looks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.hw-flow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 6px 0; }
-.hw-flow > div { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 92px; text-align: center; }
-.hw-flow img { width: 72px; height: 72px; border-radius: 10px; object-fit: cover; }
-.hw-flow b { color: var(--chalk); font-size: 14px; }
-.hw-flow small { color: var(--muted); font-size: 11px; line-height: 1.3; }
-.hw-flow i { color: var(--yellow); font-style: normal; font-size: 20px; }
 .hw-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: var(--bg-card);
            color: var(--yellow); font-size: 30px; }
-.hw-flow code { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 10px; background: var(--bg-card);
-                color: var(--cyan); font: 12px/1.3 ui-monospace, monospace; }
+/* 4 · the model, as a pipeline: top to bottom on a phone, left to right on a wide screen */
+.hw-arch { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.hw-stage { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; max-width: 260px; text-align: center; }
+.hw-stage > img, .hw-mini { width: 120px; height: 120px; border-radius: 12px; object-fit: cover; }
+.hw-stage figcaption b { color: var(--chalk); display: block; font-size: 15px; }
+.hw-stage figcaption small { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.hw-arrow { color: var(--yellow); font-style: normal; font-size: 22px; transform: rotate(90deg); }
+.hw-resnet { display: flex; align-items: center; gap: 6px; height: 120px; }
+.hw-resnet span { display: grid; place-items: center; border-radius: 8px; background: var(--bg-card); color: var(--cyan);
+                  font-size: 11px; border: 1.5px solid #2c4a42; padding: 4px; }
+.hw-resnet span:nth-child(1) { width: 64px; height: 110px; }
+.hw-resnet span:nth-child(2) { width: 52px; height: 84px; }
+.hw-resnet span:nth-child(3) { width: 44px; height: 60px; color: var(--yellow); }
+.hw-fmap { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; width: 120px; height: 120px; }
+.hw-fmap i { background: var(--cyan); border-radius: 2px; }
+.hw-writer { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.hw-writer code { display: block; white-space: pre; min-width: 120px; min-height: 120px; padding: 8px 10px; border-radius: 12px;
+                  background: var(--bg-card); color: var(--chalk); font: 600 14px/1.35 ui-monospace, monospace; text-align: left; }
+.hw-rule { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.hw-rule small { color: var(--muted); font-size: 11.5px; }
+.hw-rule div { display: flex; gap: 3px; }
+.hw-rule b { width: 20px; height: 22px; display: grid; place-items: center; border-radius: 5px; font: 600 12px ui-monospace, monospace;
+             background: var(--bg-card); color: #4b5b57; text-decoration: line-through; }
+.hw-rule b.ok { color: var(--green); text-decoration: none; box-shadow: inset 0 0 0 1.5px var(--green); }
+/* 5 · training */
+.hw-train { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: center; }
+.hw-loop { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hw-loop div { background: var(--bg-card); border-radius: 10px; padding: 10px; color: var(--text); font-size: 13.5px; line-height: 1.35; }
+.hw-loop div b { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; margin-right: 4px;
+                 background: var(--yellow); color: #1a1a1a; font-size: 12px; }
+.hw-again { grid-column: 1 / -1; text-align: center; color: var(--yellow); font-size: 14px; }
+.hw-chart { background: var(--bg-card); border-radius: 12px; padding: 10px; }
+.hw-chart svg { width: 100%; height: auto; display: block; }
+.hw-chart .grid { stroke: #24392f; }
+.hw-chart .loss { fill: none; stroke: var(--yellow); stroke-width: 2.5; stroke-linejoin: round; }
+.hw-chart .exact { fill: var(--green); stroke: var(--bg-card); stroke-width: 2; }
+.hw-chart text { font: 11px system-ui, sans-serif; }
+.hw-chart .acc { fill: var(--green); } .hw-chart .ax { fill: var(--muted); } .hw-chart .lossl { fill: var(--yellow); }
+.hw-chart figcaption { color: var(--muted); font-size: 12.5px; text-align: center; margin-top: 4px; }
+/* 6 · in Chrome */
+.hw-chrome { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.hw-chrome > div { display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 220px; text-align: center; }
+.hw-chrome b { color: var(--chalk); font-size: 15px; }
+.hw-chrome small { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
 @media (min-width: 720px) {
+  .hw-arch, .hw-chrome { flex-direction: row; align-items: flex-start; justify-content: center; }
+  .hw-stage { max-width: 150px; }
+  .hw-arrow { transform: none; margin-top: 48px; }
+  .hw-chrome .hw-arrow { margin-top: 24px; }
+  .hw-train { grid-template-columns: 1fr 1.2fr; }
   .hw-gates { grid-template-columns: repeat(4, 1fr); }
   .hw-play { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
   .hw-four { grid-template-columns: repeat(4, 1fr); }
