@@ -30,7 +30,10 @@ touch runs/DONE
 RUN
 tmux kill-session -t kolam 2>/dev/null || true
 tmux new-session -d -s kolam -n train "bash runs/jobs_runner.sh"
+first=$(awk '!/^#/ && NF && $1 != "sh" {print $1; exit}' jobs.sh)    # the page is up from the start,
+mkdir -p runs/$first                                                    # even while a "sh" step makes data
+tmux new-window -d -t kolam -n watch "source ~/kolam_core_model/env.sh; python -m kolam_feed.watch runs/$first --port 8800"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w runs/awake.ps1)" "$(wslpath -w runs)\\DONE" &
-sleep 8
-cmd.exe /c start "" "http://localhost:8800/watch.html"
+for i in $(seq 30); do curl -s -o /dev/null localhost:8800/watch.html && break; sleep 2; done
+cmd.exe /c start "" "http://127.0.0.1:8800/watch.html"
 while tmux has-session -t kolam 2>/dev/null; do sleep 30; done   # keeps WSL up until the session is closed
