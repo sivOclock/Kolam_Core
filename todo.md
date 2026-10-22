@@ -64,7 +64,6 @@ pass 1 finds small kolams. 448-512 px only if the 18-20 band stays weak.
       try int8; time it on a laptop and a phone
 - [ ] Constrained gaps for B (border gaps only walls or outward horns), like A's `allowed_next`
 - [ ] Rebuild the site, upload `dist/` to cPanel
-- [ ] Resume: replace the Kolam bullets with measured numbers (params, accuracy by band, ms, size)
 
 Later: fine-tune on real kolam photos with labels (draw them in the studio); diamond (1-3-5-7) dot
 layouts; rangoli as its own class; a large teacher model distilled into the browser model.
