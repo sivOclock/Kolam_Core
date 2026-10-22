@@ -250,10 +250,7 @@ body.scroll { overflow: auto; height: auto; min-height: 100vh; }
 body.reader .board { touch-action: manipulation; }
 body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(--bg-card); font-family: system-ui, sans-serif; }
 .rd { max-width: 980px; margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 16px 28px; display: flex; flex-direction: column; gap: 18px; }
-.rd-head { position: relative; }
-.rd-nav { position: absolute; right: 0; top: 10px; font-size: 14px; }
-.rd-nav a, .rd-foot a { color: var(--yellow); text-decoration: none; }
-.rd-nav a:hover, .rd-foot a:hover { text-decoration: underline; }
+.rd-foot a { color: var(--yellow); text-decoration: none; }
 .rd-head h1 { font: 36px 'Schoolbell', cursive; color: var(--chalk); letter-spacing: .5px; }
 .rd-head p { color: var(--muted); font-size: 15px; line-height: 1.45; margin-top: 4px; max-width: 60ch; }
 .rd-pick { display: flex; flex-direction: column; gap: 12px; background: var(--bg-panel); border-radius: 14px; padding: 14px; }
@@ -444,18 +441,26 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
   .hw-looks { grid-template-columns: repeat(6, 1fr); }
 }
 
-/* main page: "How it works" as a pill that bounces now and then, to invite a click */
-.rd-nav a.rd-how { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px;
-                   background: var(--yellow); color: #1a1a1a; font: 600 14px system-ui, sans-serif; text-decoration: none;
-                   box-shadow: 0 0 0 0 rgba(250,204,21,.5); animation: rd-bounce 3.6s ease-in-out 1.2s infinite; }
-.rd-nav a.rd-how:hover { text-decoration: none; animation: none; filter: brightness(1.06); }
-.rd-nav a.rd-how span { transition: transform .2s; }
-.rd-nav a.rd-how:hover span { transform: translateX(3px); }
-@keyframes rd-bounce {
-  0%, 62%, 100% { transform: translateY(0); box-shadow: 0 0 0 0 rgba(250,204,21,.5); }
-  68% { transform: translateY(-7px); }
-  74% { transform: translateY(0); box-shadow: 0 0 0 8px rgba(250,204,21,0); }
-  80% { transform: translateY(-3px); }
-  86% { transform: translateY(0); }
+/* the top row of the reader pages: a badge or a pill on each side, above the title (never over it) */
+.rd-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.rd-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font: 600 12px system-ui, sans-serif;
+            color: var(--green); background: rgba(110,231,183,.1); border: 1px solid rgba(110,231,183,.4); }
+.rd-badge span { color: var(--yellow); }
+/* "How it works" and "Try it": small yellow pills that hop now and then, to draw the eye */
+.rd-pill { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 99px; text-decoration: none;
+           background: var(--yellow); color: #1a1a1a !important; font: 700 12.5px system-ui, sans-serif;
+           animation: rd-hop 2.6s ease-in-out .8s infinite; }
+.rd-pill:hover { animation: none; filter: brightness(1.07); }
+@keyframes rd-hop {
+  0%, 55%, 100% { transform: translateY(0) scale(1); box-shadow: 0 0 0 0 rgba(250,204,21,.6); }
+  63% { transform: translateY(-6px) scale(1.06); }
+  71% { transform: translateY(0) scale(1); box-shadow: 0 0 0 10px rgba(250,204,21,0); }
+  78% { transform: translateY(-3px); }
+  85% { transform: translateY(0); }
 }
-@media (prefers-reduced-motion: reduce) { .rd-nav a.rd-how { animation: none; } }
+/* GitHub: a small dark pill with its mark, still */
+.rd-gh { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 99px; text-decoration: none;
+         background: #0d1117; color: #f0f6fc !important; border: 1px solid #30363d; font: 600 12.5px system-ui, sans-serif; }
+.rd-gh:hover { border-color: #8b949e; }
+.rd-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (prefers-reduced-motion: reduce) { .rd-pill { animation: none; } }

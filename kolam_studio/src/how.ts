@@ -7,6 +7,7 @@ import { Board, CHALK, bezierSegments } from './board'
 import { compile } from './kolam/compiler'
 import { drawn } from './kolam/drawn'
 import { fromEncoding } from './kolam/encoding'
+import { GITHUB } from './links'
 
 const GATES = [
   { enc: ['00', '010', '00', '010', '00'], d: '0', name: 'wall', says: 'the line turns back, so the two sides stay apart', mark: [2, 0] },
@@ -29,7 +30,10 @@ const SYSTEMS = [
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <main class="rd hw">
     <header class="rd-head">
-      <nav class="rd-nav"><a href="./index.html">← Try it</a></nav>
+      <div class="rd-top">
+        <a class="rd-pill" href="./index.html"><span aria-hidden="true">←</span> Try it</a>
+        ${GITHUB}
+      </div>
       <h1>How it works</h1>
       <p>A kolam looks endlessly intricate, yet it follows a few simple rules. Kolam Core turns those rules
          into numbers, makes millions of kolams from them, and learns to read them back from a photo.</p>
@@ -139,7 +143,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </section>
 
     <footer class="rd-foot">
-      <p><a href="./index.html">← Try it on a kolam</a> · <a href="https://github.com/sivOclock/Kolam_Core" target="_blank" rel="noopener">GitHub</a></p>
+      <p class="rd-links"><a class="rd-pill" href="./index.html"><span aria-hidden="true">←</span> Try it on a kolam</a> ${GITHUB}</p>
     </footer>
   </main>`
 

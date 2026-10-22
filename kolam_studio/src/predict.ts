@@ -10,6 +10,7 @@ import { compile } from './kolam/compiler'
 import { drawn } from './kolam/drawn'
 import { fromEncoding } from './kolam/encoding'
 import { validate } from './kolam/model'
+import { GITHUB } from './links'
 import { loadReader, readKolam } from './reader'
 
 type ModelInfo = { id: string; name: string; params: string; note: string; kolam_check: boolean }
@@ -18,10 +19,13 @@ type Example = { file: string; dots: string; encoding: string[] } // public/exam
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <main class="rd">
     <header class="rd-head">
-      <nav class="rd-nav"><a class="rd-how" href="./how.html">How it works <span aria-hidden="true">→</span></a></nav>
+      <div class="rd-top">
+        <span class="rd-badge"><span aria-hidden="true">✦</span> Fully trained AI model</span>
+        <a class="rd-pill" href="./how.html">How it works <span aria-hidden="true">→</span></a>
+      </div>
       <h1>Kolam Core</h1>
-      <p>Show it a kolam. It finds the dots, follows the lines, and draws the kolam back for you,
-         right here on your device.</p>
+      <p>Show it a kolam. A fully trained AI model finds the dots, follows the lines, and draws the kolam
+         back for you, right here on your device.</p>
     </header>
 
     <section class="rd-pick">
@@ -59,7 +63,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     </section>
 
     <footer class="rd-foot">
-      <p><a href="https://github.com/sivOclock/Kolam_Core" target="_blank" rel="noopener">GitHub</a></p>
+      <p>${GITHUB}</p>
       <p class="rd-small">Currently serving a smaller model for speed. A bigger, better model is on its way.</p>
     </footer>
   </main>`
