@@ -426,8 +426,9 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .tf-tokens { display: grid; gap: 1px; width: 132px; height: 132px; }
 .tf-tokens i { border-radius: 1px; transition: opacity .3s; } /* tiles of the photo; while it looks, the rest dim */
 .tf-tokens i.hot { box-shadow: 0 0 0 1.5px var(--yellow), 0 0 8px var(--yellow); position: relative; z-index: 1; }
-.tf-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; min-height: 30px; }
-.tf-chips i { font: 600 14px ui-monospace, monospace; font-style: normal; min-width: 24px; height: 28px; display: grid; place-items: center;
+.tf-chips { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 30px; }
+.tf-chips div { display: flex; gap: 3px; }
+.tf-chips i { font: 600 13px ui-monospace, monospace; font-style: normal; min-width: 20px; height: 22px; display: grid; place-items: center;
               padding: 0 4px; border-radius: 6px; background: var(--bg-panel); color: var(--chalk); }
 .tf-chips i.d1 { color: var(--cyan); } .tf-chips i.d2 { color: var(--green); }
 .tf-chips i.d3, .tf-chips i.d4, .tf-chips i.d5, .tf-chips i.d6, .tf-chips i.d7, .tf-chips i.d8 { color: var(--pink); }

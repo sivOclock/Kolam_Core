@@ -469,7 +469,7 @@ function soFar(board: Board, t: number): [number, number] | null {
 // 4 · the transformer: a light walks through the stages, one pass per digit, with the real tokens and scores
 const tfSteps = [...document.querySelectorAll<HTMLElement>('#tf [data-s], #tf [data-e]')]
 const PARTS = 9 // the eyes' parts (data-e 0-8), lit one after another when a photo comes in
-const SLOW = 3 // the first 3 digits go through every stage slowly; the rest are written quickly
+const SLOW = 2 // the first 2 digits go through every stage; the rest are written quickly
 const tfBoard = new Board($<HTMLCanvasElement>('tfBoard'), '')
 let stage = 0, pass = 0, sub = -1
 
@@ -508,10 +508,13 @@ function tfShow(): void {
   tfSteps.forEach((el) => el.classList.toggle('lit', lit(el)))
   const st = dec.steps[pass]
   // the tokens it reads: BOS, then the digits so far (the last 9 of them)
+  // every token it reads: ▸, then all the digits so far, a line per digit row (a "|" ends one)
   const so = ['▸', ...dec.steps.slice(0, pass).map((x) => TOKS[x.tok])]
-  const shown = so.slice(-10)
-  $('tfChips').innerHTML = (so.length > shown.length ? '<i>…</i>' : '') +
-    shown.map((t, k) => `<i class="d${t}${k === shown.length - 1 && stage >= 1 ? ' new' : ''}">${t}</i>`).join('')
+  const lines: string[][] = [[]]
+  so.forEach((t) => (lines[lines.length - 1].push(t), t === '|' && lines.push([])))
+  let n = 0
+  $('tfChips').innerHTML = lines.filter((l) => l.length).map((l) => `<div>${l.map((t) =>
+    `<i class="d${t}${++n === so.length && stage >= 1 ? ' new' : ''}">${t}</i>`).join('')}</div>`).join('')
   $('tfImg').classList.toggle('looking', stage === 3)
   $('tfImg').querySelectorAll<HTMLElement>('i').forEach((cell, n) => {
     cell.style.opacity = stage === 3 ? String(0.12 + 0.88 * Math.sqrt(looks[pass][n] / 255)) : ''
@@ -528,7 +531,7 @@ function tfTick(): void {
   if (stage === 0 && sub < PARTS) {
     sub++
     tfShow()
-    return void setTimeout(tfTick, 600)
+    return void setTimeout(tfTick, 380)
   }
   stage++
   if (stage > 7) {
@@ -538,7 +541,7 @@ function tfTick(): void {
   }
   tfShow()
   const fast = pass >= SLOW
-  setTimeout(tfTick, fast ? 140 : stage === 3 ? 1900 : 850) // a longer look at where it looks
+  setTimeout(tfTick, fast ? 70 : stage === 3 ? 1200 : 550) // a longer look at where it looks
 }
 
 // 5 · watch it write: photo + where it looks, the kolam so far, the digits; step by step
@@ -575,23 +578,42 @@ function wrShow(): void {
 function wrGo(to: number): void {
   if (!dec) return
   t = Math.max(0, Math.min(dec.steps.length, to))
-  if (t >= dec.steps.length) stop()
   wrShow()
+}
+/** Play from here; at the end, rest a moment on the whole kolam, then again from the start. */
+function loop(): void {
+  stop()
+  if (t >= dec!.steps.length) t = 0
+  timer = window.setInterval(() => {
+    if (t < dec!.steps.length) return wrGo(t + 1)
+    stop()
+    timer = window.setTimeout(() => ((t = 0), loop()), 2200)
+  }, calm ? 600 : 260)
+  wrGo(t + 1)
 }
 function stop(): void {
   clearInterval(timer)
+  clearTimeout(timer)
   timer = 0
 }
+let paused = false // the reader pressed pause or stepped: no autoplay until they press play
 $('wrPlay').onclick = () => {
-  if (timer) return void (stop(), wrShow())
-  if (t >= dec!.steps.length) t = 0
-  timer = window.setInterval(() => wrGo(t + 1), calm ? 600 : 260)
-  wrGo(t + 1)
+  if (timer) return void ((paused = true), stop(), wrShow())
+  paused = false
+  loop()
 }
-$('wrNext').onclick = () => (stop(), wrGo(t + 1))
-$('wrBack').onclick = () => (stop(), wrGo(t - 1))
-$('wrReset').onclick = () => (stop(), wrGo(0))
-$<HTMLInputElement>('wrStep').oninput = (e) => (stop(), wrGo(+(e.target as HTMLInputElement).value))
+$('wrNext').onclick = () => ((paused = true), stop(), wrGo(t + 1))
+$('wrBack').onclick = () => ((paused = true), stop(), wrGo(t - 1))
+$('wrReset').onclick = () => ((paused = true), stop(), wrGo(0))
+$<HTMLInputElement>('wrStep').oninput = (e) => ((paused = true), stop(), wrGo(+(e.target as HTMLInputElement).value))
+// plays by itself while on screen (unless paused), and stops when scrolled away
+let inView = false
+function autoplay(): void {
+  if (!dec || calm) return
+  if (inView && !timer && !paused) loop()
+  else if (!inView && timer) (stop(), wrShow())
+}
+new IntersectionObserver(([e]) => ((inView = e.isIntersecting), autoplay()), { threshold: 0.35 }).observe($('wrBoard'))
 
 window.addEventListener('resize', () => dec && tfLink())
 fetch('./how/decode.json').then((r) => r.json()).then((d: Decode) => {
@@ -606,6 +628,7 @@ fetch('./how/decode.json').then((r) => r.json()).then((d: Decode) => {
   tfShow()
   if (!calm) setTimeout(tfTick, 850)
   wrShow()
+  autoplay()
 })
 
 // 6 · the real training record of the served model
