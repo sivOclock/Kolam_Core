@@ -472,9 +472,16 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .tf-pick { height: 3.2em; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--text); font-size: 13.5px; }
 .tf-pick b { color: var(--yellow); font: 700 16px ui-monospace, monospace; }
 /* 11 scores, shared by 4 and 5: struck out = the kolam rules forbid it; lit = the one written */
-.hw-bars { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; width: 100%; max-width: 360px; height: 96px; }
+.hw-bars { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 4px; width: 100%; max-width: 360px; height: 96px; }
+.hw-bar { min-width: 0; }
+.hw-bar i .narrow { display: none; }
+@media (max-width: 460px) { /* phones: whole-number scores, tighter bars, so all 11 fit */
+  .hw-bars { gap: 2px; }
+  .hw-bar i .wide { display: none; } .hw-bar i .narrow { display: inline; }
+  .hw-bar b { font-size: 12px; }
+}
 .hw-bar { display: grid; grid-template-rows: 1fr auto; position: relative; }
-.hw-bar span { align-self: end; background: var(--muted); border-radius: 3px 3px 0 0; min-height: 2px; transition: height .25s; }
+.hw-bar > span { align-self: end; background: var(--muted); border-radius: 3px 3px 0 0; min-height: 2px; transition: height .25s; }
 .hw-bar em { position: absolute; left: 50%; top: -2px; transform: translate(-50%, -100%); font: 600 11px system-ui, sans-serif;
              font-style: normal; color: var(--muted); white-space: nowrap; }
 .hw-bar.win em { color: var(--yellow); }
@@ -484,8 +491,8 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 #tfBars .hw-bar { grid-template-rows: 1fr auto auto; } /* raw scores: under each token */
 .hw-bar b { font: 600 13px ui-monospace, monospace; color: var(--text); text-align: center; padding-top: 3px; }
 .hw-bar.no b { color: #4b5d58; text-decoration: line-through; }
-.hw-bar.no span { background: #2c403b; }
-.hw-bar.win span { background: var(--yellow); }
+.hw-bar.no > span { background: #2c403b; }
+.hw-bar.win > span { background: var(--yellow); }
 .hw-bar.win b { color: var(--yellow); }
 /* 5 · watch it write */
 .wr { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } /* phone: photo + board side by side, digits below */
@@ -511,7 +518,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .wr-ctl { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
 .wr-ctl .rd-btn { min-height: 40px; min-width: 48px; font-size: 15px; }
 .wr-ctl input { flex: 1 1 100%; max-width: 420px; accent-color: var(--yellow); }
-@media (prefers-reduced-motion: reduce) { .tf-step, .tf-tokens i, .hw-bar span { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .tf-step, .tf-tokens i, .hw-bar > span { transition: none; } }
 .hw-train { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: center; }
 .hw-loop { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .hw-loop div { background: var(--bg-card); border-radius: 10px; padding: 10px; color: var(--text); font-size: 13.5px; line-height: 1.35; }

@@ -414,7 +414,8 @@ function bars(el: HTMLElement, st: Step | undefined, rules: boolean, raw = false
     const win = rules && st && st.tok === j ? ' win' : ''
     const say = raw ? st?.l[j].toFixed(1) : pct(p)
     return `<div class="hw-bar${no}${win}"><span style="height:${Math.max(2, h * 100)}%"></span>` +
-      (raw ? `<b>${t}</b><i>${say ?? ''}</i>` : `<em>${win ? say : ''}</em><b>${t}</b>`) + '</div>'
+      (raw ? `<b>${t}</b><i><span class="wide">${say ?? ''}</span><span class="narrow">${st ? Math.round(st.l[j]) : ''}</span></i>`
+        : `<em>${win ? say : ''}</em><b>${t}</b>`) + '</div>'
   }).join('')
 }
 
