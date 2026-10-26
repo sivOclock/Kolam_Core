@@ -8,7 +8,7 @@ import numpy as np
 
 from PIL import Image, ImageDraw
 
-from .augment import SURFACES, Augment, turn
+from .augment import Augment, turn
 from .compiler import compile_hypergraph
 from .encoding import VOCAB, from_encoding, to_encoding, to_tokens
 from .render import Style, _Canvas, random_style, render_kolam
@@ -112,6 +112,54 @@ class KolamDataset:
         return self.transform(item) if self.transform else item
 
 
+class RenderedDataset:
+    """Pictures drawn ahead of time by `kolam_gen render` (img_*.bin: JPEGs one after another, img_*.jsonl:
+    a label per picture): item i is the same dict as KolamDataset's (image, encoding, text, tokens, turn, M),
+    then `transform`. Labels stay packed (shared with DataLoader workers); each worker maps the .bin files
+    itself. The set leaves out kolam_feed.train.split's val kolams, so validate on the kolam shards."""
+
+    vocab = VOCAB
+
+    def __init__(self, src: str | Path, transform=None):
+        self.dir = Path(src)
+        self.meta = json.loads((self.dir / "render.json").read_text())
+        self.size = self.meta["size"]
+        encs, turns, shard, off, ln, M = [], [], [], [], [], []
+        self.bins = sorted(self.dir.glob("img_*.bin"))
+        for si, b in enumerate(self.bins):
+            for line in open(b.with_suffix(".jsonl")):
+                r = json.loads(line)
+                encs.append("|".join(r["encoding"]))
+                turns.append(r["turn"])
+                shard.append(si)
+                off.append(r["off"])
+                ln.append(r["len"])
+                M.append(r["M"])
+        self.encodings, self.turns = Packed(encs), Packed(turns)
+        self.shard, self.off, self.len = np.array(shard, np.int32), np.array(off, np.int64), np.array(ln, np.int32)
+        self.M = np.array(M, np.float64).reshape(-1, 3, 3)
+        self.transform = transform
+        self._maps = None
+
+    def __len__(self) -> int:
+        return len(self.encodings)
+
+    def __getitem__(self, i: int) -> dict:
+        import io
+        import mmap
+        if self._maps is None:                                   # per process: forked workers map their own
+            self._maps = []
+            for b in self.bins:
+                with open(b, "rb") as f:
+                    self._maps.append(mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ))
+        m, o = self._maps[self.shard[i]], int(self.off[i])
+        img = Image.open(io.BytesIO(m[o:o + int(self.len[i])])).convert("RGB")
+        enc = self.encodings[i].split("|")
+        item = {"image": img, "encoding": enc, "text": target_text(enc), "tokens": to_tokens(enc),
+                "turn": self.turns[i], "M": self.M[i]}
+        return self.transform(item) if self.transform else item
+
+
 PHOTO_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 NOT_KOLAM_KINDS = ("photo", "floor", "dots", "scribble")
 
@@ -124,7 +172,8 @@ class NotKolamDataset:
       floor     an empty floor or paper, no kolam on it
       dots      a dot grid with no lines (looks most like a kolam)
       scribble  random smooth loops in kolam ink (lines that make no kolam)
-    split "train" / "val": every 10th photo is held out for val."""
+    Photos are a quarter of them and only lightly touched (they are real photos already); the drawn kinds
+    get `augment` like the kolams. split "train" / "val": every 10th photo is held out for val."""
 
     def __init__(self, photos: str | Path | None, size: int = 448, seed: int = 0, augment: str | Augment = "light",
                  split: str = "train", n: int | None = None):
@@ -142,7 +191,7 @@ class NotKolamDataset:
 
     def render(self, i: int) -> dict:
         rng = np.random.default_rng([self.seed, self.epoch, i, 7])
-        kinds, p = (NOT_KOLAM_KINDS, [0.5, 0.15, 0.2, 0.15]) if self.files else (NOT_KOLAM_KINDS[1:], [0.3, 0.4, 0.3])
+        kinds, p = (NOT_KOLAM_KINDS, [0.25, 0.2, 0.3, 0.25]) if self.files else (NOT_KOLAM_KINDS[1:], [0.3, 0.4, 0.3])
         kind = str(rng.choice(kinds, p=p))
         style = random_style(rng, self.size)
         S = self.size
@@ -154,10 +203,8 @@ class NotKolamDataset:
             img = im.crop((x, y, x + c, y + c)).resize((S, S), Image.BILINEAR)
             if rng.random() < 0.5:
                 img = img.transpose(Image.FLIP_LEFT_RIGHT)
-        elif kind == "floor":
-            img = Image.new("RGB", (S, S), style.bg)
-            if rng.random() < 0.8:                     # a real floor, else the plain board / paper
-                img, _ = Augment(p_surface=1.0, surfaces=(str(rng.choice(SURFACES)),)).image(img, rng, style.bg)
+        elif kind == "floor":                          # an empty board / paper: `augment` lays the floor after
+            img = Image.new("RGB", (S, S), style.bg)   # its camera warp, as for a kolam (no tilted edge to spot)
         elif kind == "dots":
             rows, cols = (int(v) for v in rng.integers(2, 13, 2))
             cv = _Canvas(rows, cols, style)
@@ -171,11 +218,30 @@ class NotKolamDataset:
                 P = rng.uniform(0.1, 0.9, (int(rng.integers(4, 12)), 2)) * S * 2
                 d.line(_smooth(P, closed=rng.random() < 0.6), fill=style.ink, width=w, joint="curve")
             img = img.resize((S, S), Image.LANCZOS)
-        img, _ = self.aug.image(img, rng, style.bg, style.ink)
+        if kind == "photo":                              # already a real camera photo: only a light touch
+            img = _light_touch(img, rng)
+        else:                                            # drawn like the kolams, so the same look as theirs
+            img, _ = self.aug.image(img, rng, style.bg, style.ink)
         return {"image": img, "kind": kind}
 
     def __getitem__(self, i: int) -> dict:
         return self.render(i)
+
+
+def _light_touch(img: Image.Image, rng: np.random.Generator) -> Image.Image:
+    """A real photo needs no fake camera: a little rotation, brightness and JPEG at most."""
+    import io
+    if rng.random() < 0.5:
+        img = img.rotate(float(rng.uniform(-8, 8)), Image.BILINEAR)
+        img = img.crop((24, 24, img.size[0] - 24, img.size[1] - 24)).resize(img.size, Image.BILINEAR)
+    if rng.random() < 0.5:
+        a = np.asarray(img, np.float32) * rng.uniform(0.85, 1.15)
+        img = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+    if rng.random() < 0.5:
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=int(rng.integers(60, 92)))
+        img = Image.open(io.BytesIO(buf.getvalue())).convert("RGB")
+    return img
 
 
 def _smooth(P: np.ndarray, closed: bool, n: int = 12) -> list[tuple[float, float]]:

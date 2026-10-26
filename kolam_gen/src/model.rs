@@ -253,7 +253,7 @@ pub fn lat_op(p: V, op: Op, rows: i32, cols: i32) -> V {
     }
 }
 
-fn is_reflection(op: Op) -> bool {
+pub fn is_reflection(op: Op) -> bool {
     matches!(op, Op::MirLR | Op::MirUD | Op::Tr | Op::Anti)
 }
 

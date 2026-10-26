@@ -50,8 +50,8 @@ def random_style(rng: np.random.Generator, size: int = 384) -> Style:
                  dot_radius=float(rng.uniform(0.08, 0.16)),
                  margin=float(rng.uniform(0.5, 1.4)),
                  show_dots=bool(rng.random() < 0.9),
-                 blur=float(rng.choice([0.0, 0.0, rng.uniform(0.3, 1.0)])),
-                 noise=float(rng.choice([0.0, rng.uniform(2, 10)])),
+                 blur=float(rng.choice([0.0, 0.0, rng.uniform(0.3, 0.7)])),
+                 noise=float(rng.choice([0.0, rng.uniform(1, 5)])),
                  jitter=float(rng.choice([0.0, rng.uniform(0.01, 0.05)])),
                  seed=int(rng.integers(1 << 31)))
 

@@ -7,6 +7,12 @@ description = "Fast kolam encoding generator: the four generator systems, compil
 [dependencies]
 rayon = "1.10"
 serde_json = "1.0"
+tiny-skia = "0.12"
+jpeg-encoder = { version = "0.7", features = ["simd"] }
+cudarc = { version = "0.19", optional = true, default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-13000"] }
+
+[features]
+gpu = ["dep:cudarc"]   # kolam_gen render --gpu: the pixel work in CUDA (cargo build --release --features gpu)
 
 [profile.release]
 opt-level = 3

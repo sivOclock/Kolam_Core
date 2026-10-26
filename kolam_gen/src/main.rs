@@ -2,14 +2,21 @@
 //!
 //!   kolam_gen generate -n 1000000 -o data/enc_1m          # all four systems, shards of encodings
 //!   kolam_gen check labels.jsonl                          # geometry stats per encoding (parity tests)
+//!   kolam_gen render data/enc_2m_20 -o data/img_12 -n 1440000 --max-dots 12 [--gpu]   # pictures on disk
 //!
 //! Every sample: pick a system -> build gap states + horns -> crop -> compile -> geometry check ->
 //! its kolam encoding. Reproducible from (seed, index, attempt); duplicates are drawn again.
-//! Images are rendered later, while training (kolam_feed/).
+//! Pictures: drawn while training (kolam_feed/), or ahead of time by `kolam_gen render` (render.rs).
 
+mod fx;
 mod geometry;
+#[cfg(feature = "gpu")]
+mod gpu;
+mod look;
 mod model;
 mod random;
+mod raster;
+mod render;
 mod rng;
 mod systems;
 
@@ -242,7 +249,7 @@ fn big(system: &str, size: i32, seed: u64, out: &Path) -> std::io::Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage:\n  kolam_gen generate -n N -o DIR [--seed 2026] [--shard 50000] [--threads 0]\n                     [--mix random=0.55,substitution=0.15,switching=0.15,wfc=0.15] [--min-size 3] [--max-size 8]\n  kolam_gen check FILE.jsonl\n  kolam_gen big --system switching|wfc|substitution --size 100 [--seed 1] -o big.jsonl"
+        "usage:\n  kolam_gen generate -n N -o DIR [--seed 2026] [--shard 50000] [--threads 0]\n                     [--mix random=0.55,substitution=0.15,switching=0.15,wfc=0.15] [--min-size 3] [--max-size 8]\n  kolam_gen check FILE.jsonl\n  kolam_gen big --system switching|wfc|substitution --size 100 [--seed 1] -o big.jsonl\n  kolam_gen render SRC -o DIR -n N [--size 384] [--max-dots 12] [--seed 0] [--shard 50000] [--batch 256] [--threads 0] [--gpu]"
     );
     std::process::exit(2)
 }
@@ -264,6 +271,47 @@ fn main() {
                 }
             }
             big(&system, size, seed, &out).unwrap();
+        }
+        Some("render") => {
+            let mut o = render::Opts {
+                src: PathBuf::from(args.get(1).filter(|a| !a.starts_with('-')).unwrap_or_else(|| usage())),
+                out: PathBuf::new(),
+                n: 0,
+                size: 384,
+                max_dots: 12,
+                seed: 0,
+                shard: 50_000,
+                batch: 256,
+                gpu: false,
+            };
+            let mut threads = 0usize;
+            let mut it = args[2..].iter();
+            while let Some(a) = it.next() {
+                if a == "--gpu" {
+                    o.gpu = true;
+                    continue;
+                }
+                let v = it.next().unwrap_or_else(|| usage());
+                let num = |v: &String| v.parse::<usize>().unwrap_or_else(|_| usage());
+                match a.as_str() {
+                    "-o" | "--out" => o.out = PathBuf::from(v),
+                    "-n" => o.n = num(v),
+                    "--size" => o.size = num(v),
+                    "--max-dots" => o.max_dots = num(v) as i32,
+                    "--seed" => o.seed = num(v) as u64,
+                    "--shard" => o.shard = num(v),
+                    "--batch" => o.batch = num(v),
+                    "--threads" => threads = num(v),
+                    _ => usage(),
+                }
+            }
+            if o.n == 0 || o.out.as_os_str().is_empty() || o.shard == 0 || o.batch == 0 || !(64..=2048).contains(&o.size) {
+                usage();
+            }
+            if threads > 0 {
+                rayon::ThreadPoolBuilder::new().num_threads(threads).build_global().unwrap();
+            }
+            render::render(&o).unwrap();
         }
         Some("check") => check_file(Path::new(args.get(1).unwrap_or_else(|| usage()))).unwrap(),
         Some("generate") => {

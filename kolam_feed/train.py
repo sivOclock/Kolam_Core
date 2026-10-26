@@ -26,7 +26,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from .data import KolamDataset, NotKolamDataset
+from .data import KolamDataset, NotKolamDataset, RenderedDataset
 from .encoding import KolamError, encoding_grid, from_encoding
 from .model import PAD, TOK, build, gap_points
 
@@ -97,7 +97,7 @@ def score(pred: list[list[str]], true: list[list[str]]) -> Counter:
     return c
 
 
-def evaluate(model, loader, dev, limit: int | None = None, neg=None, real=None) -> dict:
+def evaluate(model, loader, dev, limit: int | None = None, neg=None, real=None, max_dots: int | None = None) -> dict:
     """Reading scores on held-out kolams; with `neg` (a loader of non-kolam image batches) also the
     kolam head: keeps_kolams (kolams it says are kolams) and rejects (non-kolams it turns away); with
     `real` (a batch of real kolam photos, no labels needed) keeps_real: the real photos it keeps."""
@@ -107,7 +107,7 @@ def evaluate(model, loader, dev, limit: int | None = None, neg=None, real=None) 
         img = b["image"].to(dev)
         t = time.time()
         with torch.autocast(dev.type, enabled=dev.type == "cuda"):
-            pred = model.predict(img)
+            pred = model.predict(img, max_dots=max_dots)
             if neg is not None:
                 c["kept"] += int((model.is_kolam(img) >= 0.5).sum())
         secs += time.time() - t
@@ -190,6 +190,21 @@ def _loader(ds, idx, a, shuffle, workers: int | None = None):
                       persistent_workers=False, prefetch_factor=1 if n else None)
 
 
+def _buckets(ds, idx, batch: int, seed: int, chunk: int = 64):
+    """Training batches of similar-sized kolams (a batch is padded to its longest answer, and the seq
+    decoder pays for every padded token): shuffle, then sort each run of `chunk` batches by length, cut it
+    into batches, and shuffle the batches. Positions into idx (for Subset(ds, idx)); full batches only."""
+    rng = np.random.default_rng(seed)
+    length = np.diff(ds.encodings.off)[idx]                           # answer length, in characters
+    order = rng.permutation(len(idx))
+    out = []
+    for k in range(0, len(order), batch * chunk):
+        run = order[k:k + batch * chunk]
+        run = run[np.argsort(length[run], kind="stable")]
+        out += [run[j:j + batch].tolist() for j in range(0, len(run) - batch + 1, batch)]
+    return [out[i] for i in rng.permutation(len(out))]
+
+
 def _give_back_memory() -> None:
     """Return what loading millions of kolams freed to the OS before the workers fork, so they don't
     each start with it (glibc keeps freed heap otherwise)."""
@@ -209,7 +224,14 @@ def train(a) -> None:
     ds = KolamDataset(a.src, size=a.size, augment=a.aug, seed=a.seed, transform=to_item)
     tr, va = split(ds, a.max_dots)
     sizes = [grid_size(ds.encodings[i].split("|")) for i in tr]
-    cfg = {"kind": a.model, "max_rows": max(r for r, _ in sizes), "max_cols": max(c for _, c in sizes), "d": a.width,
+    train_ds, train_idx = ds, tr
+    if a.rendered:                                                    # pictures drawn ahead (kolam_gen render);
+        train_ds = RenderedDataset(a.rendered, transform=to_item)     # val still draws the held-out kolams
+        rs = [grid_size(e.split("|")) for e in train_ds.encodings]
+        train_idx = np.array([i for i, rc in enumerate(rs) if a.max_dots is None or max(rc) <= a.max_dots], np.int64)
+        sizes += [rs[i] for i in train_idx]
+    grow = a.grid_max or 0                                            # room for bigger kolams in a later run
+    cfg = {"kind": a.model, "max_rows": max(grow, max(r for r, _ in sizes)), "max_cols": max(grow, max(c for _, c in sizes)), "d": a.width,
            "backbone": a.backbone} | ({"ctx_layers": a.ctx_layers} if a.model == "grid" else {})
     step, epoch = 0, 0
     ck = out / "last.pt"
@@ -266,7 +288,12 @@ def train(a) -> None:
     t0, step0 = time.time(), step
     while step < a.steps:
         ds.set_epoch(epoch)
-        for b in _loader(ds, tr, a, True):
+        loader = _loader(train_ds, train_idx, a, True)
+        if a.bucket:
+            loader = DataLoader(Subset(train_ds, train_idx), batch_sampler=_buckets(train_ds, train_idx, a.batch, a.seed + epoch),
+                                num_workers=a.workers, collate_fn=batch_items, pin_memory=True,
+                                prefetch_factor=1 if a.workers else None)
+        for b in loader:
             lr = a.lr * min(1, (step + 1) / a.warmup) * 0.5 * (1 + math.cos(math.pi * min(step / a.steps, 1)))
             for g in opt.param_groups:
                 g["lr"] = lr * g["k"]
@@ -291,12 +318,12 @@ def train(a) -> None:
                 log.write(json.dumps(r) + "\n")
                 log.flush()
             if step % a.eval_every == 0 or step == a.steps:
-                r = {"step": step, "val": evaluate(model, val, dev, a.val_n, neg_val, real)}
+                r = {"step": step, "val": evaluate(model, val, dev, a.val_n, neg_val, real, a.max_dots)}
                 print(json.dumps(r), flush=True)
                 log.write(json.dumps(r) + "\n")
                 log.flush()
                 if len(look):
-                    samples(model, val.dataset.dataset, look, dev, out, step)
+                    samples(model, val.dataset.dataset, look, dev, out, step, max_dots=a.max_dots)
                 if r["val"]["exact"] > best:                          # keep only last.pt and the best so far
                     best = r["val"]["exact"]
                     save(out / "best.pt")
@@ -367,7 +394,7 @@ def _sheet(rows, preds, T: int = 256):
     return sheet, right
 
 
-def samples(model, ds, idx, dev, out: Path, step: int, T: int = 160) -> None:
+def samples(model, ds, idx, dev, out: Path, step: int, T: int = 160, max_dots: int | None = None) -> None:
     """What the model reads now, for the live view (`python -m kolam_feed.watch`): fixed held-out kolams
     under <out>/samples/: input_<k>.png and truth_<k>.png once, read_<step>_<k>.png at every eval, and
     index.json (per eval: step and, per kolam, right or not and the grid size read)."""
@@ -378,7 +405,7 @@ def samples(model, ds, idx, dev, out: Path, step: int, T: int = 160) -> None:
                      for r in rows])
     model.eval()
     with torch.no_grad(), torch.autocast(dev.type, enabled=dev.type == "cuda"):
-        preds = model.predict(x.to(dev))
+        preds = model.predict(x.to(dev), max_dots=max_dots)
     model.train()
     size = lambda e: f"{len(e) // 2}x{len(e[0])}" if e else "0x0"
     items = []
@@ -494,18 +521,33 @@ def serve_cmd(a) -> None:
     HTTPServer((a.host, a.port), Handler).serve_forever()
 
 
+def _attend(mha, q, kv, mask=None):
+    """nn.MultiheadAttention (batch 1, batch_first) as plain matmuls: its own reshapes fix the length
+    when exported to ONNX."""
+    import torch.nn.functional as F
+    d, h = q.shape[-1], mha.num_heads
+    W, b = mha.in_proj_weight, mha.in_proj_bias
+    q, k, v = (F.linear(t, W[j * d:(j + 1) * d], b[j * d:(j + 1) * d]).reshape(1, -1, h, d // h).transpose(1, 2)
+               for j, t in enumerate((q, kv, kv)))
+    att = q @ k.transpose(-1, -2) / math.sqrt(d // h)
+    if mask is not None:
+        att = att + mask
+    return mha.out_proj((att.softmax(-1) @ v).transpose(1, 2).reshape(1, -1, d))
+
+
 def export_cmd(a) -> None:
     """A seq checkpoint -> two ONNX files for the browser (kolam_studio/index.html, no server):
     encoder.onnx  image (1, 3, S, S) in [0, 1] -> mem (1, N, d) and kolam (1,), the chance it is a kolam
                   at all, run once per picture;
-    decoder.onnx  mem, ids, row, col (1, max_len) padded, pos (1,) -> logits of the token after pos (1, 11),
-                  run per token (the causal mask keeps the padding out).
+    decoder.onnx  mem, ids, row, col (1, n), pos (1,) -> logits of the token after pos (1, 11), run per
+                  token; n is free ("dynamic" in model.json): the page sends only the tokens so far.
     The page works out row/col (model.token_slots) and the constrained decoding (encoding.allowed_next)."""
     import torch.nn as nn
     model, state = load(a.ckpt)
-    assert state["cfg"]["kind"] == "seq", "export takes a seq checkpoint"
     size, out = state["args"]["size"], Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    if state["cfg"]["kind"] == "grid":
+        return _export_grid(model, size, out, a.ckpt)
 
     class Wrap(nn.Module):
         def __init__(self):
@@ -524,7 +566,12 @@ def export_cmd(a) -> None:
                 m.col(col.clamp(max=m.col.num_embeddings - 1))
             i = torch.arange(ids.shape[1])
             mask = torch.where(i[None, :] > i[:, None], float("-inf"), 0.0)
-            return m.out(m.norm(m.dec(x, mem, tgt_mask=mask)))[0].index_select(0, pos)
+            for layer in m.dec.layers:                                   # = m.dec (pre-norm), written out so
+                h = layer.norm1(x)                                       # the length can change after export
+                x = x + _attend(layer.self_attn, h, h, mask)
+                x = x + _attend(layer.multihead_attn, layer.norm2(x), mem)
+                x = x + layer.linear2(torch.relu(layer.linear1(layer.norm3(x))))
+            return m.out(m.norm(x))[0].index_select(0, pos)
 
     img = torch.rand(1, 3, size, size)
     mem = model.memory(img)
@@ -535,10 +582,52 @@ def export_cmd(a) -> None:
                           opset_version=17, dynamo=False)
         torch.onnx.export(Dec(), (mem, ids, rc, rc, torch.tensor([0])), out / "decoder.onnx",
                           input_names=["mem", "ids", "row", "col", "pos"], output_names=["logits"],
-                          opset_version=17, dynamo=False)
-    meta = {"size": size, "max_len": model.max_len, "bos": len(TOK), "ckpt": str(a.ckpt)}
+                          dynamic_axes={k: {1: "n"} for k in ("ids", "row", "col")}, opset_version=17, dynamo=False)
+    meta = {"size": size, "max_len": model.max_len, "bos": len(TOK), "dynamic": True, "ckpt": str(a.ckpt)}
     (out / "model.json").write_text(json.dumps(meta))
     print(f"wrote {out}/encoder.onnx, decoder.onnx, model.json ({size}px)")
+
+
+def _export_grid(model, size: int, out: Path, ckpt) -> None:
+    """A grid checkpoint -> two ONNX files (GridModel.predict split in two; the page does the rest):
+    encoder.onnx  image (1, 3, S, S) -> f8, f16 (features), rows (1, R), cols (1, C) size logits,
+                  corners (1, 4, 2) the gap lattice's corners in pixels, kolam (1,) the chance it is a kolam;
+    gaps.onnx     f8, f16, xy (N, 2) gap positions in pixels, orient (N,) -> logits (N, 9), one digit per gap.
+    The page picks rows/cols, maps gap_points through homography(lattice_corners, corners) and reads."""
+    import torch.nn as nn
+    import torch.nn.functional as F
+
+    class Enc(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.m = model
+
+        def forward(self, img):
+            f8, f16, lr, lc, corners, k = self.m.features(img)
+            return f8, f16, lr, lc, corners, torch.sigmoid(k)
+
+    class Gaps(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.m = model
+
+        def forward(self, f8, f16, xy, orient):
+            g = (xy / size * 2 - 1).view(1, 1, -1, 2)
+            x = torch.cat([F.grid_sample(f, g, align_corners=False)[0, :, 0].T for f in (f8, f16)], 1)
+            return self.m.gap_head(x + self.m.orient(orient))
+
+    torch.backends.mha.set_fastpath_enabled(False)          # its fused transformer layer has no ONNX op
+    img = torch.rand(1, 3, size, size)
+    with torch.no_grad():
+        f8, f16, *_ = model.features(img)
+        torch.onnx.export(Enc(), (img,), out / "encoder.onnx", input_names=["image"],
+                          output_names=["f8", "f16", "rows", "cols", "corners", "kolam"], opset_version=17, dynamo=False)
+        torch.onnx.export(Gaps(), (f8, f16, torch.rand(5, 2) * size, torch.zeros(5, dtype=torch.long)),
+                          out / "gaps.onnx", input_names=["f8", "f16", "xy", "orient"], output_names=["logits"],
+                          dynamic_axes={"xy": {0: "n"}, "orient": {0: "n"}, "logits": {0: "n"}},
+                          opset_version=17, dynamo=False)
+    (out / "model.json").write_text(json.dumps({"kind": "grid", "size": size, "ckpt": str(ckpt)}))
+    print(f"wrote {out}/encoder.onnx, gaps.onnx, model.json ({size}px, grid)")
 
 
 def add_parsers(sub) -> None:
@@ -558,6 +647,10 @@ def add_parsers(sub) -> None:
     t.add_argument("--warmup", type=int, default=1000)
     t.add_argument("--aug", default="light", help="augmentation preset: none, light, photo, real")
     t.add_argument("--max-dots", type=int, default=None, help="only grids up to this many rows/cols")
+    t.add_argument("--grid-max", type=int, default=None, help="build the model for grids up to this size even if "
+                   "this run's data is smaller (so a later run can continue from it with bigger kolams)")
+    t.add_argument("--bucket", action="store_true", help="batch kolams of similar size together (less padding: "
+                   "the seq decoder trains much faster on mixed sizes)")
     t.add_argument("--workers", type=int, default=6)
     t.add_argument("--device", default="auto")
     t.add_argument("--seed", type=int, default=0)
@@ -567,6 +660,8 @@ def add_parsers(sub) -> None:
     t.add_argument("--not-kolam", default=None, help="folder of photos that are not kolams (e.g. Imagenette), "
                    "mixed with drawn non-kolams (floors, dot grids, scribbles) for the kolam head; used only "
                    "as non-kolam examples, never as a kolam's background")
+    t.add_argument("--rendered", default=None, help="train on pictures drawn ahead by `kolam_gen render` (a folder of "
+                   "img_*.bin + .jsonl); src still gives the held-out kolams the checks draw")
     t.add_argument("--real-kolams", default=None, help="folder of real kolam photos (no labels): every eval scores "
                    "how many the kolam head keeps")
     t.add_argument("--not-kolam-share", type=float, default=0.15, help="non-kolams per batch, as a share of --batch (0: off)")
@@ -603,7 +698,7 @@ def add_parsers(sub) -> None:
     v.add_argument("--port", type=int, default=8765)
     v.add_argument("--device", default="auto")
     v.set_defaults(fn=serve_cmd)
-    x = sub.add_parser("export", help="seq checkpoint -> ONNX for the in-browser reader (kolam_studio/index.html)")
+    x = sub.add_parser("export", help="seq or grid checkpoint -> ONNX for the in-browser reader (kolam_studio/index.html)")
     x.add_argument("ckpt")
     x.add_argument("-o", "--out", default="kolam_studio/public/model")
     x.set_defaults(fn=export_cmd)

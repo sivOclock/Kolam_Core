@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .encoding import VOCAB, allowed_next, from_tokens
+from .encoding import FACING_OUT, VOCAB, allowed_next, from_tokens
 
 BOS, PAD = len(VOCAB), len(VOCAB) + 1
 TOK = {t: i for i, t in enumerate(VOCAB)}
@@ -79,7 +79,7 @@ def kolam_loss(logit: torch.Tensor, n_kolams: int) -> torch.Tensor:
     """The "is this a kolam?" head: the first n_kolams pictures of the batch are kolams, the rest are not."""
     y = torch.zeros_like(logit)
     y[:n_kolams] = 1
-    return 0.5 * F.binary_cross_entropy_with_logits(logit.float(), y.float())
+    return 0.2 * F.binary_cross_entropy_with_logits(logit.float(), y.float())
 
 
 def _pos2d(h: int, w: int, d: int, device) -> torch.Tensor:
@@ -151,13 +151,19 @@ class SeqModel(nn.Module):
         return F.cross_entropy(lg.flatten(0, 1), tgt.flatten(), ignore_index=PAD) + kolam_loss(k, B)
 
     @torch.no_grad()
-    def predict(self, img) -> list[list[str]]:
-        """Greedy, constrained decoding -> one encoding (list of digit rows) per image."""
-        mem = self.memory(img)
+    def predict(self, img, min_kolam: float | None = None, max_dots: int | None = None) -> list[list[str]]:
+        """Greedy, constrained decoding -> one encoding (list of digit rows) per image. With min_kolam,
+        a picture whose kolam score is below it gets [] and is never decoded. max_dots caps the answer at
+        max_dots x max_dots (default: what the model is sized for), so an unsure model can't ramble on to
+        its longest answer (each token re-reads the whole answer so far)."""
+        mem, k = self.encode(img)
         B = img.shape[0]
+        mr = min(max_dots or self.cfg["max_rows"], self.cfg["max_rows"])
         ids = torch.full((B, 1), BOS, dtype=torch.long, device=img.device)
-        seqs, done = [[] for _ in range(B)], [False] * B
-        for _ in range(self.max_len):
+        seqs = [[] for _ in range(B)]
+        bars, row = [0] * B, [0] * B                                  # rows finished, digits in this row
+        done = [False] * B if min_kolam is None else (torch.sigmoid(k.float()) < min_kolam).tolist()
+        for _ in range(min(self.max_len, (2 * mr + 1) * (mr + 2) + 1) if not all(done) else 0):
             lg = self.logits(mem, ids)[:, -1].float().cpu()
             nxt = []
             for b in range(B):
@@ -165,11 +171,16 @@ class SeqModel(nn.Module):
                     nxt.append(END)
                     continue
                 ok = allowed_next(seqs[b]) if len(seqs[b]) < self.max_len - 1 else []
+                if bars[b] >= 2 * mr + 1:                             # as many rows as max_dots allows
+                    ok = ["<end>"]
+                elif bars[b] == 0 and row[b] >= mr:                   # first row as long as it may be
+                    ok = [t for t in ok if t == "|"]
                 ok = ok or ["<end>"]
                 m = torch.full((len(VOCAB),), float("-inf"))
                 m[[TOK[t] for t in ok]] = 0
                 t = int((lg[b] + m).argmax())
                 seqs[b].append(VOCAB[t])
+                bars[b], row[b] = (bars[b] + 1, 0) if t == BAR else (bars[b], row[b] + 1)
                 done[b] = t == END
                 nxt.append(t)
             if all(done):
@@ -273,21 +284,40 @@ class GridModel(nn.Module):
         return l_gap + l_size + l_corner + kolam_loss(k, B)
 
     @torch.no_grad()
-    def predict(self, img) -> list[list[str]]:
+    def predict(self, img, min_kolam: float | None = None, max_dots: int | None = None) -> list[list[str]]:
+        """One encoding per image; with min_kolam, a picture whose kolam score is below it gets [] and
+        its gaps are never read. max_dots caps the grid size read."""
         S = img.shape[-1]
-        f8, f16, lr, lc, corners, _ = self.features(img)
+        f8, f16, lr, lc, corners, k = self.features(img)
+        if max_dots:
+            lr, lc = lr[:, :max_dots], lc[:, :max_dots]
         rows, cols = lr.argmax(1) + 1, lc.argmax(1) + 1
+        skip = [False] * len(img) if min_kolam is None else (torch.sigmoid(k.float()) < min_kolam).tolist()
+        if all(skip):
+            return [[] for _ in skip]
         M = homography(lattice_corners(rows, cols), corners)
         pts, bidx = [], []
         for b in range(img.shape[0]):
+            if skip[b]:
+                continue
             g = gap_points(int(rows[b]), int(cols[b]))
             pts.append(torch.from_numpy(g))
             bidx += [b] * len(g)
         pts = torch.cat(pts).to(img.device)
         bidx = torch.tensor(bidx, device=img.device)
-        digits = self.read_gaps(f8, f16, M, pts, bidx, S).argmax(1).cpu().tolist()
+        logits = self.read_gaps(f8, f16, M, pts, bidx, S)
+        lj, li = pts[:, 0], pts[:, 1]                              # a border gap only holds a wall or a horn
+        R2, C2 = 2 * rows[bidx], 2 * cols[bidx]                    # facing out, else it can't be drawn
+        for side, at in (("N", li == 0), ("S", li == R2), ("W", lj == 0), ("E", lj == C2)):
+            off = torch.ones(logits.shape[1], dtype=torch.bool, device=logits.device)
+            off[[int(d) for d in FACING_OUT[side]]] = False
+            logits[at[:, None] & off] = float("-inf")
+        digits = logits.argmax(1).cpu().tolist()
         out, k = [], 0
         for b in range(img.shape[0]):
+            if skip[b]:
+                out.append([])
+                continue
             R, C = int(rows[b]), int(cols[b])
             enc = []
             for li in range(2 * R + 1):

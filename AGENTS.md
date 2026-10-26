@@ -56,13 +56,15 @@ Kolam_labs/
 ├── brushes.json                   # shared brush spec: gate states + horn directions and shapes
 ├── kolam_gen/                     # Rust: data generation (spec §11) → encoding shards
 │   └── src/                       # model.rs (labels, rules, symmetry, encoding), geometry.rs (trace, drawn, check),
-│                                  #   random.rs + systems.rs (the four systems), main.rs (generate / check / big)
+│                                  #   random.rs + systems.rs (the four systems), main.rs (generate / check / big / render)
+│                                  #   render: training pictures ahead of time — look.rs (every random choice),
+│                                  #   raster.rs (line mask), fx.rs + fx.cu/gpu.rs (effects, CPU or CUDA: same pixels)
 ├── kolam_feed/                    # Python: reading, rendering, checking, feeding the model
 │   ├── spec.py / hypergraph.py    # lattice helpers; labels, validation, canonical form (from_gates)
 │   ├── encoding.py                # kolam encoding <-> label; grid / cells / tokens; constrained decoding (spec §12)
 │   ├── compiler.py                # hypergraph -> gates -> closed lattice strokes; observe / decode
 │   ├── geometry.py / render.py    # closed chained Bezier, drawn(), check_geometry; PIL renderer + random styles
-│   ├── data.py                    # KolamDataset (renders on the fly), NotKolamDataset, collate
+│   ├── data.py                    # KolamDataset (renders on the fly), RenderedDataset (kolam_gen render), NotKolamDataset
 │   ├── model.py / train.py        # models A (seq) and B (grid) + is-a-kolam head; train, eval, export
 │   ├── watch.py / watch.html      # live training page
 │   └── verify.py                  # independent re-check of kolam_gen output
@@ -130,6 +132,8 @@ python -m pytest tests -q                             # must stay green
 cd kolam_gen && cargo build --release                # the generator (all four systems)
 kolam_gen/target/release/kolam_gen generate -n 1000000 -o data/enc_1m   # shards, resumable, no images; data/ is gitignored
 kolam_gen/target/release/kolam_gen big --system substitution --size 64 -o big.jsonl   # one kolam, any size
+kolam_gen/target/release/kolam_gen render data/enc_2m_20 -o data/img_12 -n 1440000 --max-dots 12   # pictures + labels on disk
+cd kolam_gen && cargo build --release --features gpu  # render --gpu: effects in CUDA (needs libnvrtc.so.13 on LD_LIBRARY_PATH)
 python -m kolam_feed verify  data/enc_1m --n 5000    # independent Python re-check; exit 1 on failure
 python -m kolam_feed preview data/enc_1m -o sheet.png   # rendered training images
 cd kolam_studio && npm install && npm run dev        # brush drawing UI on http://localhost:5173
@@ -153,6 +157,9 @@ cd kolam_studio && npm run build                    # dist/ = static site (uploa
 - `kolam_studio/src/kolam/` mirrors the model too (hypergraph, DSL, compiler, encoding): when the brush
   model changes, change it as well. The same goes for drawing: `kolam_studio/src/kolam/drawn.ts` must
   draw what `geometry.drawn()` draws (spec §10).
+- `kolam_gen render` draws the same look as `render.py` + `augment.py` "real" (not the same random stream);
+  `fx.rs` and `fx.cu` must stay formula-for-formula equal (the GPU and CPU pictures match to the pixel).
+  A change to the training look goes in both Python and render (look.rs / fx.rs / fx.cu).
 - Free drawing vs dataset labels: `strict=True` (default) enforces every label rule; the studio
   uses `strict=False`, which only refuses what cannot be drawn (`hypergraph.problems`).
 - When adding generator code (in `kolam_gen/`): structure-first per hypergraph doc §5

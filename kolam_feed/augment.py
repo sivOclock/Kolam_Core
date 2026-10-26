@@ -113,11 +113,12 @@ class Augment:
                            shift=0.06, p_light=0.6, p_shadow=0.3, p_texture=0.6, p_colour=0.7, p_chalk=0.5,
                            p_lowres=0.3, p_jpeg=0.6, p_gray=0.1)
         if name == "real":
-            return replace(Augment.preset("photo"), p_geom=1.0, rotate=30.0, fit=True, tilt=0.35, perspective=0.05,
-                           scale=(0.92, 1.1), p_far=0.25, p_glare=0.7,
-                           p_surface=0.85, p_chalk=0.3,
-                           p_ink=0.7, p_multi=0.15, p_thick=0.4, p_debris=0.3, p_texture=0.3, p_vignette=0.4,
-                           p_motion=0.15, p_defocus=0.2, p_noise=0.4)
+            # toned down (2026-10-25) so a person can still read every kolam; kolam_gen render draws the same
+            return replace(Augment.preset("photo"), p_geom=1.0, rotate=15.0, fit=True, tilt=0.2, perspective=0.03,
+                           shift=0.05, scale=(0.92, 1.1), p_far=0.2, far_scale=(0.6, 0.9), p_glare=0.4,
+                           p_surface=0.85, p_chalk=0.15,
+                           p_ink=0.7, p_multi=0.1, p_thick=0.4, p_debris=0.3, p_texture=0.3, p_vignette=0.4,
+                           p_motion=0.05, p_defocus=0.1, p_lowres=0.1, p_jpeg=0.5, p_noise=0.4)
         raise ValueError(f"unknown augmentation preset {name!r}: none, light, photo, real")
 
     def image(self, img: Image.Image, rng: np.random.Generator, bg, ink=None) -> tuple[Image.Image, np.ndarray]:
@@ -137,9 +138,9 @@ class Augment:
         if rng.random() < self.p_debris:
             a = _debris(a, rng)
         if rng.random() < self.p_texture:
-            a = a * (1 + 0.12 * _smooth_noise(a.shape[:2], rng, cells=int(rng.integers(4, 24))))[..., None]
+            a = a * (1 + 0.08 * _smooth_noise(a.shape[:2], rng, cells=int(rng.integers(4, 24))))[..., None]
         if rng.random() < self.p_light:
-            a = a * _gradient(a.shape[:2], rng, 0.35)[..., None]
+            a = a * _gradient(a.shape[:2], rng, 0.25)[..., None]
         if rng.random() < self.p_shadow:
             a = a * _shadow(a.shape[:2], rng)[..., None]
         if rng.random() < self.p_glare:
@@ -155,18 +156,18 @@ class Augment:
         if blurred:
             a = _motion(a, rng)
         if rng.random() < self.p_noise:
-            a = a + rng.normal(0, rng.uniform(3, 12), a.shape[:2] + (1 if rng.random() < 0.5 else 3,))
+            a = a + rng.normal(0, rng.uniform(2, 6), a.shape[:2] + (1 if rng.random() < 0.5 else 3,))
         img = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
         if not blurred and rng.random() < self.p_defocus:
             blurred = True
-            img = img.filter(ImageFilter.GaussianBlur(rng.uniform(0.6, 1.6) * img.size[0] / 384))
+            img = img.filter(ImageFilter.GaussianBlur(rng.uniform(0.4, 1.0) * img.size[0] / 384))
         if not blurred and rng.random() < self.p_lowres:
             s = img.size[0]
-            k = float(rng.uniform(0.35, 0.7))
+            k = float(rng.uniform(0.6, 0.85))
             img = img.resize((max(16, int(s * k)),) * 2, Image.BILINEAR).resize((s, s), Image.BILINEAR)
         if rng.random() < self.p_jpeg:
             buf = io.BytesIO()
-            img.save(buf, "JPEG", quality=int(rng.integers(25, 85)))
+            img.save(buf, "JPEG", quality=int(rng.integers(50, 90)))
             img = Image.open(io.BytesIO(buf.getvalue())).convert("RGB")
         return img, H
 
@@ -190,11 +191,11 @@ class Augment:
             colour = np.einsum("khw,kc->hwc", w / w.sum(0), np.array(cols, np.float32))
         else:
             c = _ink_colour(rng, lum) if new_ink else ink
-            if abs(float(np.dot(c, [0.3, 0.59, 0.11])) - lum) < 80:     # keep the line visible on its floor
+            if abs(float(np.dot(c, [0.3, 0.59, 0.11])) - lum) < 100:    # keep the line visible on its floor
                 c = np.array([245, 240, 228] if lum < 128 else [25, 22, 30], np.float32)
             colour = np.broadcast_to(np.asarray(c, np.float32), a.shape)
         if new_ink or multi:                                            # powder: grainy, not quite solid
-            alpha = alpha * (1 - rng.uniform(0, 0.35) * rng.random(a.shape[:2])).astype(np.float32)
+            alpha = alpha * (1 - rng.uniform(0, 0.2) * rng.random(a.shape[:2])).astype(np.float32)
         return floor * (1 - alpha[..., None]) + colour * alpha[..., None]
 
     def _geom(self, img, rng, bg):
@@ -267,14 +268,14 @@ def _shadow(shape, rng) -> np.ndarray:
     t = rng.uniform(0, np.pi)
     d = np.cos(t) * (x - rng.uniform(0, w)) + np.sin(t) * (y - rng.uniform(0, h))
     soft = rng.uniform(0.03, 0.15) * w
-    return 1 - rng.uniform(0.2, 0.5) / (1 + np.exp(-d / soft))
+    return 1 - rng.uniform(0.1, 0.3) / (1 + np.exp(-d / soft))
 
 
 def _colour(a, rng) -> np.ndarray:
     m = a.mean()
-    a = (a - m) * rng.uniform(0.7, 1.3) + m * rng.uniform(0.75, 1.25)
-    a = a * rng.uniform(0.85, 1.15, 3)
-    g = rng.uniform(0.75, 1.35)
+    a = (a - m) * rng.uniform(0.85, 1.15) + m * rng.uniform(0.85, 1.15)
+    a = a * rng.uniform(0.9, 1.1, 3)
+    g = rng.uniform(0.85, 1.2)
     return 255 * (np.clip(a, 0, 255) / 255) ** g
 
 
@@ -282,8 +283,8 @@ def _chalk(a, rng, bg) -> np.ndarray:
     """Powdery, broken lines: some ink pixels fade towards the background, in clumps."""
     ink = np.abs(a - bg).sum(2) > 60
     keep = _smooth_noise(a.shape[:2], rng, cells=int(rng.integers(30, 90)))
-    fade = np.clip((rng.uniform(-0.2, 0.3) - keep) * 2.5, 0, 1) * ink
-    fade = np.maximum(fade, (rng.random(a.shape[:2]) < 0.15) * ink * 0.6)
+    fade = np.clip((rng.uniform(-0.4, 0.0) - keep) * 2.5, 0, 1) * ink
+    fade = np.maximum(fade, (rng.random(a.shape[:2]) < 0.05) * ink * 0.4)
     out = a * (1 - fade[..., None]) + bg * fade[..., None]
     return np.asarray(Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.4)),
                       np.float32)
@@ -293,7 +294,7 @@ def _vignette(shape, rng) -> np.ndarray:
     h, w = shape
     y, x = np.mgrid[0:h, 0:w].astype(np.float32)
     r2 = ((x / w - rng.uniform(0.4, 0.6)) ** 2 + (y / h - rng.uniform(0.4, 0.6)) ** 2) * 2
-    return 1 - rng.uniform(0.2, 0.55) * r2
+    return 1 - rng.uniform(0.1, 0.3) * r2
 
 
 def _glare(shape, rng) -> np.ndarray:
@@ -315,12 +316,12 @@ def _glare(shape, rng) -> np.ndarray:
     else:                                                             # wash from a window: one side brighter
         t = rng.uniform(0, 2 * np.pi)
         g = np.clip(0.5 + np.cos(t) * (x - 0.5) + np.sin(t) * (y - 0.5), 0, 1) ** 2
-    return (g * rng.uniform(0.2, 0.5)).astype(np.float32)
+    return (g * rng.uniform(0.1, 0.3)).astype(np.float32)
 
 
 def _motion(a, rng) -> np.ndarray:
     """Camera shake: the mean of copies shifted along one direction."""
-    n = int(rng.integers(3, 8)) * a.shape[0] // 384 + 2
+    n = int(rng.integers(2, 4)) * a.shape[0] // 384 + 1
     t = rng.uniform(0, np.pi)
     out = np.zeros_like(a)
     for s in np.linspace(-n / 2, n / 2, n):
@@ -341,7 +342,7 @@ def _ink_colour(rng, floor_lum: float, coloured: bool = False) -> np.ndarray:
     p = np.array([0 if coloured else 3, 0 if coloured else 1, 1, 1, 1, 1, 1, 1, 0.5, 0 if coloured else 1.0])
     for _ in range(8):
         c = np.array(INKS[names[rng.choice(len(names), p=p / p.sum())]], np.float32) * rng.uniform(0.9, 1.05, 3)
-        if abs(float(c @ [0.3, 0.59, 0.11]) - floor_lum) > 80:
+        if abs(float(c @ [0.3, 0.59, 0.11]) - floor_lum) > 100:
             return np.clip(c, 0, 255)
     return np.array([245, 240, 228] if floor_lum < 128 else [25, 22, 30], np.float32)
 
@@ -414,7 +415,7 @@ def _debris(a, rng) -> np.ndarray:
     d = ImageDraw.Draw(img)
     s = a.shape[0] / 384
     cols = [(240, 140, 20), (250, 200, 40), (200, 30, 50), (240, 240, 230), (60, 130, 50), (70, 50, 35)]
-    for _ in range(int(rng.integers(4, 30))):
+    for _ in range(int(rng.integers(3, 15))):
         x, y = rng.uniform(0, a.shape[1]), rng.uniform(0, a.shape[0])
         r = rng.uniform(1, 5) * s
         c = cols[rng.integers(len(cols))]
