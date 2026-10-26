@@ -1,3 +1,3 @@
 [
-  {"id": "pilot", "name": "Best", "params": "7.1M", "note": "model A, 69.5% exact on held-out kolams up to 5x5", "kolam_check": false}
+  {"id": "night_am2", "name": "Up to 12x12", "params": "12.5M", "note": "model A, night 2 (10 h on the GPU laptop): 64% exact on 100 new kolams up to 12x12 (91% at 6-8 dots); kolam check keeps 74% of real kolam photos", "kolam_check": true}
 ]

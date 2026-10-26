@@ -179,8 +179,22 @@ function describe(rows: number, cols: number, lines: number): string {
   return lines === 1 ? `${size}, drawn in a single line.` : `${size}, woven from ${lines} lines.`
 }
 
+/** The rows read so far, drawn at once while the model reads on: the dot rows done make a smaller
+ *  kolam, closed along its bottom edge, that grows downward in a square laid out for cols rows. */
+function drawPartial(enc: string[]): void {
+  const h = fromEncoding(enc)
+  const k = compile(h)
+  const board = new Board($<HTMLCanvasElement>('board'), '')
+  board.layout(Math.max(h.rows, h.cols), h.cols, 1)
+  board.clear()
+  board.dots(CHALK.main, Math.max(2, board.s * 0.14), k.used)
+  drawn(k).strokes.forEach((P, i) =>
+    board.chalk(bezierSegments(board, P).flatMap((seg, j) => (j ? seg.slice(1) : seg)), CHALK.main, Math.max(1.5, board.s * 0.14), 1009 * i + 1),
+  )
+}
+
 /** Draw an encoding on the board. animate: the dots appear one after another, then each line is traced
- *  at a steady pen speed with a breath between lines (about 6-10 s in all); otherwise everything at once.
+ *  at a slow, steady pen speed with a breath between lines (about 12-20 s in all); otherwise everything at once.
  *  Returns whether the reading breaks a kolam rule (then it is likely misread somewhere). */
 function drawKolam(enc: string[], done: () => void): boolean {
   const h = fromEncoding(enc)
@@ -209,13 +223,13 @@ function drawKolam(enc: string[], done: () => void): boolean {
       caption.textContent = words
       return
     }
-    const gap = Math.min(110, 1400 / Math.max(1, dots.length)) // between dots
-    const grow = 420 // each dot's own fade-in
+    const gap = Math.min(200, 2600 / Math.max(1, dots.length)) // between dots
+    const grow = 600 // each dot's own fade-in
     const dotsEnd = gap * (dots.length - 1) + grow
-    const pause = 220 // a breath between lines
+    const pause = 450 // a breath between lines
     const total = paths.reduce((n, p) => n + p.len, 0)
-    const lineMs = Math.min(7000, Math.max(3800, 2600 + 650 * lines)) // all lines, without the pauses
-    const spans = paths.map((p) => Math.max(500, (lineMs * p.len) / Math.max(total, 1)))
+    const lineMs = Math.min(16000, Math.max(9000, 6000 + 1500 * lines)) // all lines, without the pauses
+    const spans = paths.map((p) => Math.max(1200, (lineMs * p.len) / Math.max(total, 1)))
     let line = 0, drawnTo = 0, lineStart = dotsEnd + 200
     caption.textContent = 'Placing the dots…'
     const t0 = performance.now()
@@ -281,13 +295,35 @@ async function read(img: Blob, truth?: string[], from?: HTMLImageElement): Promi
       caption.textContent = ''
       return
     }
-    const r = await readKolam(img, base(current))
-    if (mine !== run) return
+    const m = models.find((x) => x.id === current)!
+    // live: as the model reads, the kolam grows on the board row by row and its pattern code prints,
+    // with the photo beside it
+    const code = $<HTMLDetailsElement>('digits').parentElement as HTMLDetailsElement
+    $('digits').textContent = ''
     const seen = $<HTMLCanvasElement>('seen')
+    const bm = await createImageBitmap(img, { imageOrientation: 'from-image' })
+    ;[seen.width, seen.height] = [bm.width, bm.height]
+    seen.getContext('2d')!.drawImage(bm, 0, 0)
+    bm.close()
+    let live = false
+    const r = await readKolam(img, base(current), m.kolam_check, (rows) => {
+      if (mine !== run || rows.length < 3) return
+      try {
+        drawPartial(rows)
+      } catch {
+        return // an odd partial reading: wait for the next row
+      }
+      if (!live) ($('frame').classList.remove('reading'), $('frame').classList.add('drawn'))
+      live = true
+      code.open = true
+      $('digits').textContent = rows.join('\n')
+      $('digits').scrollTop = $('digits').scrollHeight // the newest row in view
+      caption.textContent = `Reading row ${(rows.length - 1) / 2} of the dots…`
+    })
+    if (mine !== run) return
     ;[seen.width, seen.height] = [r.seen.width, r.seen.height]
     seen.getContext('2d')!.drawImage(r.seen, 0, 0)
     $('digits').textContent = r.encoding.length ? r.encoding.join('\n') : ''
-    const m = models.find((x) => x.id === current)!
     if (m.kolam_check && r.kolam < 0.5) {
       $('frame').classList.remove('reading')
       caption.textContent = 'This doesn’t look like a kolam.'
@@ -296,7 +332,8 @@ async function read(img: Blob, truth?: string[], from?: HTMLImageElement): Promi
     // the photo fades away and the board takes its place
     $('frame').classList.remove('reading')
     $('frame').classList.add('drawn')
-    await sleep(450)
+    if (live) caption.textContent = 'Kolam done! Let me draw it for you…'
+    await sleep(live ? 1800 : 450) // a live reading: a moment to see it whole, then it is traced again
     if (mine !== run) return
     let flawed = false
     try {

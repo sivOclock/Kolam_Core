@@ -1,27 +1,29 @@
-// The trained seq model, run in the browser (no server): `python -m kolam_feed export <ckpt>` writes
+// The trained model (seq or grid), run in the browser (no server): `python -m kolam_feed export <ckpt>` writes
 // public/model/<id>/{encoder,decoder}.onnx + model.json. The model runs in a Web Worker
 // (reader.worker.ts) so the page stays smooth while it reads; here the photo is prepared like
 // kolam_feed.train.prepare (upright, padded to a square with its edge colour, resized) and sent over.
 
-type Meta = { size: number; max_len: number; bos: number }
-type Reply = { id: number; progress?: number; meta?: Meta; error?: string; encoding?: string[]; kolam?: number; ms?: number }
+type Meta = { kind?: string; size: number; max_len: number; bos: number }
+type Reply = { id: number; progress?: number; rows?: string[]; meta?: Meta; error?: string; encoding?: string[]; kolam?: number; ms?: number }
 
 const worker = new Worker(new URL('./reader.worker.ts', import.meta.url), { type: 'module' })
-const waiting = new Map<number, { done: (r: Reply) => void; fail: (e: Error) => void; progress?: (f: number) => void }>()
+type Waiting = { done: (r: Reply) => void; fail: (e: Error) => void; progress?: (f: number) => void; rows?: (rows: string[]) => void }
+const waiting = new Map<number, Waiting>()
 let next = 0
 worker.onmessage = (ev: MessageEvent<Reply>) => {
   const w = waiting.get(ev.data.id)
   if (!w) return
   if (ev.data.progress !== undefined) return w.progress?.(ev.data.progress)
+  if (ev.data.rows) return w.rows?.(ev.data.rows)
   waiting.delete(ev.data.id)
   if (ev.data.error) w.fail(new Error(ev.data.error))
   else w.done(ev.data)
 }
 
-function ask(msg: object, transfer: Transferable[] = [], progress?: (f: number) => void): Promise<Reply> {
+function ask(msg: object, transfer: Transferable[] = [], progress?: (f: number) => void, rows?: (rows: string[]) => void): Promise<Reply> {
   const id = next++
   return new Promise((done, fail) => {
-    waiting.set(id, { done, fail, progress })
+    waiting.set(id, { done, fail, progress, rows })
     worker.postMessage({ id, ...msg }, transfer)
   })
 }
@@ -76,10 +78,13 @@ export async function prepare(img: Blob, size: number): Promise<HTMLCanvasElemen
 }
 
 /** Photo -> kolam encoding (rows of digits), the chance the photo is a kolam at all (the model's kolam
- *  head; 1 for a model exported before it had one), the square the model saw and the time taken. */
+ *  head; 1 for a model exported before it had one), the square the model saw and the time taken.
+ *  onRows (seq models): the rows read so far, each time a dot row is done, while it reads. */
 export async function readKolam(
   img: Blob,
   base = './model/',
+  check = false, // the model's kolam head is trained: on "not a kolam" skip the decoder (encoding [])
+  onRows?: (rows: string[]) => void,
 ): Promise<{ encoding: string[]; kolam: number; seen: HTMLCanvasElement; ms: number }> {
   const meta = await loadReader(base)
   const seen = await prepare(img, meta.size)
@@ -87,6 +92,6 @@ export async function readKolam(
   const px = seen.getContext('2d')!.getImageData(0, 0, S, S).data
   const x = new Float32Array(3 * S * S)
   for (let i = 0; i < S * S; i++) for (let c = 0; c < 3; c++) x[c * S * S + i] = px[i * 4 + c] / 255
-  const r = await ask({ type: 'read', base: abs(base), x }, [x.buffer])
+  const r = await ask({ type: 'read', base: abs(base), x, check }, [x.buffer], undefined, onRows)
   return { encoding: r.encoding!, kolam: r.kolam!, seen, ms: r.ms! }
 }
