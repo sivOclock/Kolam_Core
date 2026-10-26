@@ -131,6 +131,8 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
         </div>
         <div class="tf-col">
           <div class="tf-tag">the writer · once per digit</div>
+          <div class="tf-step tf-out" data-s="6 7"><div class="rd-frame"><canvas id="tfBoard" class="board"></canvas></div>
+            <small><b>the kolam so far</b>each digit is a gate; a row of dots is drawn once its digits are done</small></div>
           <div class="tf-step" data-s="6"><div class="tf-pick" id="tfPick"></div></div>
           <div class="tf-step" data-s="5 6"><div class="hw-bars" id="tfBars"></div>
             <small><b>11 scores</b>the raw score (logit) for each token: 0–8, “|” ends a row, ■ ends the kolam.
@@ -436,10 +438,39 @@ function lookAt(cv: HTMLCanvasElement, t: number): void {
   }
 }
 
+/** The kolam after t steps on `board`: every dot, the lines of the rows of dots finished so far, and the
+ *  gate of the digit just written ringed. Returns that gate (digit row, index), if a digit. */
+function soFar(board: Board, t: number): [number, number] | null {
+  const { rows, open } = written(t)
+  const st = t ? dec!.steps[t - 1] : undefined
+  const h = fromEncoding(dec!.encoding)
+  board.layout(h.rows, h.cols, 1)
+  board.clear()
+  board.dots(CHALK.main, Math.max(2, board.s * 0.14), new Set(Array.from({ length: h.rows * h.cols }, (_, n) => `${Math.floor(n / h.cols)},${n % h.cols}`)))
+  const done = rows.length % 2 ? rows.length : rows.length - 1
+  if (done >= 3) {
+    const k = compile(fromEncoding(rows.slice(0, done)))
+    const w = Math.max(1.5, board.s * 0.14)
+    drawn(k).strokes.forEach((P, si) => bezierSegments(board, P).forEach((seg, i) => board.chalk(seg, CHALK.main, w, si * 1009 + i * 7 + 1)))
+  }
+  const at: [number, number] | null = st && st.tok < BAR ? [rows.length, open.length - 1] : null
+  if (at) {
+    const [x, y] = board.px(gapAt(at[0], at[1]))
+    const ctx = board.ctx
+    ctx.strokeStyle = CHALK.highlight
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.arc(x, y, board.s * 0.55, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  return at
+}
+
 // 4 · the transformer: a light walks through the stages, one pass per digit, with the real tokens and scores
 const tfSteps = [...document.querySelectorAll<HTMLElement>('#tf [data-s], #tf [data-e]')]
 const PARTS = 9 // the eyes' parts (data-e 0-8), lit one after another when a photo comes in
-const PASSES = 12 // the writer's first 12 digits, then a new photo
+const SLOW = 3 // the first 3 digits go through every stage slowly; the rest are written quickly
+const tfBoard = new Board($<HTMLCanvasElement>('tfBoard'), '')
 let stage = 0, pass = 0, sub = -1
 
 /** Is `el` lit now? Stage 0 (a new photo) walks the eyes: the photo, each part in turn, then the tokens. */
@@ -487,6 +518,7 @@ function tfShow(): void {
     cell.classList.toggle('hot', stage === 3 && looks[pass][n] > 100)
   })
   bars($('tfBars'), stage >= 5 ? st : undefined, stage >= 6, true)
+  soFar(tfBoard, stage === 0 ? 0 : pass + (stage >= 6 ? 1 : 0))
   $('tfPick').innerHTML = stage >= 6
     ? `writes <b>${TOKS[st.tok]}</b>, the best score the rules allow: ${sureOf(st)}`
     : '&nbsp;'
@@ -500,12 +532,13 @@ function tfTick(): void {
   }
   stage++
   if (stage > 7) {
-    pass = (pass + 1) % Math.min(PASSES, dec.steps.length)
+    pass = (pass + 1) % dec.steps.length
     if (pass === 0) ((stage = 0), (sub = -1)) // a new photo: the eyes look once
     else stage = 1
   }
   tfShow()
-  setTimeout(tfTick, stage === 3 ? 1900 : 850) // a longer look at where it looks
+  const fast = pass >= SLOW
+  setTimeout(tfTick, fast ? 140 : stage === 3 ? 1900 : 850) // a longer look at where it looks
 }
 
 // 5 · watch it write: photo + where it looks, the kolam so far, the digits; step by step
@@ -518,28 +551,7 @@ function wrShow(): void {
   const final = dec.encoding
   const { rows, open } = written(t)
   const st = t ? dec.steps[t - 1] : undefined
-  // the board: every dot, and the lines of the rows of dots finished so far
-  const h = fromEncoding(final)
-  wrBoard.layout(h.rows, h.cols, 1)
-  wrBoard.clear()
-  wrBoard.dots(CHALK.main, Math.max(2, wrBoard.s * 0.14), new Set(Array.from({ length: h.rows * h.cols }, (_, n) => `${Math.floor(n / h.cols)},${n % h.cols}`)))
-  const done = rows.length % 2 ? rows.length : rows.length - 1
-  if (done >= 3) {
-    const k = compile(fromEncoding(rows.slice(0, done)))
-    const w = Math.max(1.5, wrBoard.s * 0.14)
-    drawn(k).strokes.forEach((P, si) => bezierSegments(wrBoard, P).forEach((seg, i) => wrBoard.chalk(seg, CHALK.main, w, si * 1009 + i * 7 + 1)))
-  }
-  // the gate of the digit just written, ringed
-  const at: [number, number] | null = st && st.tok < BAR ? [rows.length, open.length - 1] : null
-  if (at) {
-    const [x, y] = wrBoard.px(gapAt(at[0], at[1]))
-    const ctx = wrBoard.ctx
-    ctx.strokeStyle = CHALK.highlight
-    ctx.lineWidth = 2.5
-    ctx.beginPath()
-    ctx.arc(x, y, wrBoard.s * 0.55, 0, Math.PI * 2)
-    ctx.stroke()
-  }
+  const at = soFar(wrBoard, t)
   // the digits: the final shape, filled in as far as written
   $('wrGrid').innerHTML = final.map((row, i) => `<div class="hw-row ${i % 2 ? 'lr' : 'ud'}">${[...row].map((_, k) => {
     const d = i < rows.length ? rows[i][k] : i === rows.length ? open[k] : undefined
@@ -628,6 +640,8 @@ function drawAll(): void {
   render()
   wrBoard.invalidateBase()
   wrShow()
+  tfBoard.invalidateBase()
+  if (dec) tfShow()
 }
 let resize = 0
 window.addEventListener('resize', () => {

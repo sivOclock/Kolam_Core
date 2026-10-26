@@ -466,6 +466,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .tf-head b { display: block; color: var(--chalk); font-size: 14.5px; }
 .tf-inset { margin-top: 6px; }
 .tf-enc { max-width: 380px; } .tf-block1 { max-width: 380px; }
+.tf-out .rd-frame { width: 200px; height: 200px; border-radius: 10px; }
 .tf-pick { min-height: 1.4em; color: var(--text); font-size: 13.5px; }
 .tf-pick b { color: var(--yellow); font: 700 16px ui-monospace, monospace; }
 /* 11 scores, shared by 4 and 5: struck out = the kolam rules forbid it; lit = the one written */
