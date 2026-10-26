@@ -401,7 +401,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .hw-resnet span:nth-child(2) { width: 52px; height: 84px; }
 .hw-resnet span:nth-child(3) { width: 44px; height: 60px; color: var(--yellow); }
 /* 4 · the transformer: two columns (eyes, writer); a light walks through the stages, one pass per digit */
-.tf { display: grid; grid-template-columns: 1fr; gap: 18px; position: relative; }
+.tf { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; position: relative; } /* content never widens a column */
 /* the wire from the eyes to the writer's cross-attention: always flowing a little, bright while it is read */
 .tf-link { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 2; }
 .tf-link path { fill: none; stroke: var(--yellow); stroke-width: 2; stroke-dasharray: 5 9; opacity: .35;
@@ -409,7 +409,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .tf-link path.hot { opacity: 1; stroke-width: 3; animation-duration: .5s; filter: drop-shadow(0 0 4px rgba(250,204,21,.8)); }
 @keyframes tf-flow { to { stroke-dashoffset: -28; } }
 @media (prefers-reduced-motion: reduce) { .tf-link path { animation: none; } }
-.tf-col { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--bg-card); border-radius: 12px; padding: 12px; }
+.tf-col { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--bg-card); border-radius: 12px; padding: 12px; }
 .tf-tag { align-self: stretch; text-align: center; font: 600 12px system-ui, sans-serif; letter-spacing: .05em; text-transform: uppercase;
           color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--bg-panel); margin-bottom: 4px; }
 .tf-step { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; text-align: center; padding: 8px;
@@ -426,7 +426,8 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .tf-tokens { display: grid; gap: 1px; width: 132px; height: 132px; }
 .tf-tokens i { border-radius: 1px; transition: opacity .3s; } /* tiles of the photo; while it looks, the rest dim */
 .tf-tokens i.hot { box-shadow: 0 0 0 1.5px var(--yellow), 0 0 8px var(--yellow); position: relative; z-index: 1; }
-.tf-chips { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 30px; }
+.tf-chips { display: flex; flex-direction: column; align-items: center; gap: 3px; height: 128px; overflow: hidden;
+             justify-content: flex-end; } /* fixed: new rows push old ones up inside, the page never moves */
 .tf-chips div { display: flex; gap: 3px; }
 .tf-chips i { font: 600 13px ui-monospace, monospace; font-style: normal; min-width: 20px; height: 22px; display: grid; place-items: center;
               padding: 0 4px; border-radius: 6px; background: var(--bg-panel); color: var(--chalk); }
@@ -468,7 +469,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .tf-inset { margin-top: 6px; }
 .tf-enc { max-width: 380px; } .tf-block1 { max-width: 380px; }
 .tf-out .rd-frame { width: 200px; height: 200px; border-radius: 10px; }
-.tf-pick { min-height: 1.4em; color: var(--text); font-size: 13.5px; }
+.tf-pick { height: 3.2em; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--text); font-size: 13.5px; }
 .tf-pick b { color: var(--yellow); font: 700 16px ui-monospace, monospace; }
 /* 11 scores, shared by 4 and 5: struck out = the kolam rules forbid it; lit = the one written */
 .hw-bars { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; width: 100%; max-width: 360px; height: 96px; }
@@ -477,7 +478,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .hw-bar em { position: absolute; left: 50%; top: -2px; transform: translate(-50%, -100%); font: 600 11px system-ui, sans-serif;
              font-style: normal; color: var(--muted); white-space: nowrap; }
 .hw-bar.win em { color: var(--yellow); }
-.hw-bar i { font: 500 9.5px ui-monospace, monospace; font-style: normal; color: var(--muted); text-align: center; white-space: nowrap; }
+.hw-bar i { font: 500 9.5px/13px ui-monospace, monospace; height: 13px; font-style: normal; color: var(--muted); text-align: center; white-space: nowrap; }
 .hw-bar.win i { color: var(--yellow); }
 #tfBars { grid-template-rows: none; height: 110px; }
 #tfBars .hw-bar { grid-template-rows: 1fr auto auto; } /* raw scores: under each token */
@@ -504,7 +505,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .wr-grid span.todo { color: #3c5a52; background: none; }
 .wr-grid span.on { border-color: var(--yellow); }
 .wr-bars { align-self: center; margin-top: 14px; }
-.wr-say { text-align: center; align-self: center; min-height: 3em; }
+.wr-say { text-align: center; align-self: center; height: 4.6em; overflow: hidden; } /* fixed: no jumps */
 .wr-say small { color: var(--muted); font-size: 13px; }
 .wr-say small b { color: var(--text); font-family: ui-monospace, monospace; }
 .wr-ctl { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
@@ -533,7 +534,7 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 @media (min-width: 720px) {
   .hw-chrome { flex-direction: row; align-items: flex-start; justify-content: center; }
   .hw-arrow { transform: none; margin-top: 48px; }
-  .tf { grid-template-columns: 1fr 1.25fr; align-items: start; }
+  .tf { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: start; }
   .wr { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   .wr > .wr-pane:last-child { grid-column: auto; }
   .wr-grid { aspect-ratio: 1; }

@@ -526,12 +526,14 @@ function tfShow(): void {
     ? `writes <b>${TOKS[st.tok]}</b>, the best score the rules allow: ${sureOf(st)}`
     : '&nbsp;'
 }
+let tfOn = false // section 4 animates only while it is on screen
+let tfTimer = 0
 function tfTick(): void {
-  if (!dec) return
+  if (!dec || !tfOn) return
   if (stage === 0 && sub < PARTS) {
     sub++
     tfShow()
-    return void setTimeout(tfTick, 380)
+    return void (tfTimer = window.setTimeout(tfTick, 380))
   }
   stage++
   if (stage > 7) {
@@ -541,7 +543,7 @@ function tfTick(): void {
   }
   tfShow()
   const fast = pass >= SLOW
-  setTimeout(tfTick, fast ? 70 : stage === 3 ? 1200 : 550) // a longer look at where it looks
+  tfTimer = window.setTimeout(tfTick, fast ? 70 : stage === 3 ? 1200 : 550) // a longer look at where it looks
 }
 
 // 5 · watch it write: photo + where it looks, the kolam so far, the digits; step by step
@@ -626,7 +628,11 @@ fetch('./how/decode.json').then((r) => r.json()).then((d: Decode) => {
   $('tfImg').innerHTML = Array.from({ length: gh * gw }, (_, n) =>
     `<i style="background-image:url(${d.photo});background-position:${((n % gw) / (gw - 1)) * 100}% ${(Math.floor(n / gw) / (gh - 1)) * 100}%;background-size:${gw * 100}% ${gh * 100}%"></i>`).join('')
   tfShow()
-  if (!calm) setTimeout(tfTick, 850)
+  if (!calm) new IntersectionObserver(([e]) => {
+    const was = tfOn
+    tfOn = e.isIntersecting
+    if (tfOn && !was) (clearTimeout(tfTimer), tfTick())
+  }).observe($('tf'))
   wrShow()
   autoplay()
 })
