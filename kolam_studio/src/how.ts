@@ -93,16 +93,41 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
          the digits, looking at the photo and at what it has already written. The writer is drawn here the way
          the transformer paper draws it, bottom to top, with this model’s real sizes.</p>
       <div class="tf" id="tf">
+        <svg class="tf-link" aria-hidden="true"><path id="tfLink"/></svg>
         <div class="tf-col">
           <div class="tf-tag">the eyes · once per photo</div>
-          <div class="tf-step" data-s="0"><div class="tf-photo"><img src="./examples/kolam_1.jpg" alt="a kolam photo"><i></i></div>
+          <div class="tf-step" data-s="0"><div class="tf-photo"><img class="tf-src" alt="a kolam photo"><i></i></div>
             <small><b>photo</b>384 × 384 pixels</small></div>
-          <i class="tf-down" aria-hidden="true">↓</i>
-          <div class="tf-step" data-s="0"><div class="hw-resnet"><span>edges</span><span>curves</span><span>dots &amp; gates</span></div>
-            <small><b>ResNet-34</b>layers of filters, each one seeing a bigger patch of the photo</small></div>
-          <i class="tf-down" aria-hidden="true">↓</i>
+          <small class="tf-head"><b>ResNet-34, up to its third stage</b>27 layers of filters, each seeing a bigger patch of the photo;
+            the grid shrinks while each spot holds more numbers</small>
+          <svg class="tf-svg tf-enc" viewBox="0 0 380 438" role="img" aria-label="ResNet-34, up to its third stage, with each part and its feature-map size">
+            <defs><marker id="eh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#9CA3AF"/></marker>
+              <marker id="ehr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5d7a72"/></marker></defs>
+            <path class="tf-wire" d="M135,2 V19" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,42 V55" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,90 V103" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,126 V139" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,174 V187" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,228 V241" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,282 V295" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,336 V349" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,380 V393" marker-end="url(#eh)"/>
+            <path class="tf-wire" d="M135,418 V437" marker-end="url(#eh)"/>
+            <g data-e="0"><rect class="tf-norm" x="50" y="20" width="170" height="22" rx="5"/><text class="tf-sm" x="135" y="35.5">Normalize (ImageNet mean, std)</text></g>
+            <g data-e="1"><rect class="tf-conv" x="30" y="56" width="210" height="34" rx="8"/><text x="135" y="71.0">Conv 7 × 7 · 64 filters</text><text class="tf-sm" x="135" y="85.0">stride 2</text><rect class="tf-map" x="262" y="53.0" width="40.0" height="40.0" rx="2"/><text class="tf-side" x="306" y="72.0">192 × 192</text><text class="tf-side" x="306" y="85.0">× 64</text></g>
+            <g data-e="2"><rect class="tf-norm" x="50" y="104" width="170" height="22" rx="5"/><text class="tf-sm" x="135" y="119.5">BatchNorm + ReLU</text></g>
+            <g data-e="3"><rect class="tf-lin" x="30" y="140" width="210" height="34" rx="8"/><text x="135" y="155.0">Max-Pool 3 × 3</text><text class="tf-sm" x="135" y="169.0">stride 2</text><rect class="tf-map" x="262" y="145.5" width="23.0" height="23.0" rx="2"/><text class="tf-side" x="306" y="156.0">96 × 96</text><text class="tf-side" x="306" y="169.0">× 64</text></g>
+            <g data-e="4"><rect class="tf-conv tf-back" x="36" y="182" width="210" height="40" rx="8"/><rect class="tf-conv tf-back" x="33" y="185" width="210" height="40" rx="8"/><rect class="tf-conv" x="30" y="188" width="210" height="40" rx="8"/><text x="135" y="206.0">layer1 · 3 residual blocks</text><text class="tf-sm" x="135" y="220.0">64 channels</text><rect class="tf-map" x="262" y="196.5" width="23.0" height="23.0" rx="2"/><text class="tf-side" x="306" y="207.0">96 × 96</text><text class="tf-side" x="306" y="220.0">× 64</text></g>
+            <g data-e="5"><rect class="tf-conv tf-back" x="36" y="236" width="210" height="40" rx="8"/><rect class="tf-conv tf-back" x="33" y="239" width="210" height="40" rx="8"/><rect class="tf-conv" x="30" y="242" width="210" height="40" rx="8"/><text x="135" y="260.0">layer2 · 4 residual blocks</text><text class="tf-sm" x="135" y="274.0">128 channels, stride 2</text><rect class="tf-map" x="262" y="254.75" width="14.5" height="14.5" rx="2"/><text class="tf-side" x="306" y="261.0">48 × 48</text><text class="tf-side" x="306" y="274.0">× 128</text></g>
+            <g data-e="6"><rect class="tf-conv tf-back" x="36" y="290" width="210" height="40" rx="8"/><rect class="tf-conv tf-back" x="33" y="293" width="210" height="40" rx="8"/><rect class="tf-conv" x="30" y="296" width="210" height="40" rx="8"/><text x="135" y="314.0">layer3 · 6 residual blocks</text><text class="tf-sm" x="135" y="328.0">256 channels, stride 2</text><rect class="tf-map" x="262" y="310.875" width="10.25" height="10.25" rx="2"/><text class="tf-side" x="306" y="315.0">24 × 24</text><text class="tf-side" x="306" y="328.0">× 256</text></g>
+            <g data-e="7"><rect class="tf-conv" x="30" y="350" width="210" height="30" rx="8"/><text x="135" y="369.5">Conv 1 × 1 · 256</text></g>
+            <g data-e="8"><circle class="tf-emb" cx="135" cy="406.0" r="12.0"/><text class="tf-o" x="135" y="411.0">+</text><text class="tf-side" x="153" y="404.0">2D position code:</text><text class="tf-side" x="153" y="417.0">where each patch sits</text></g>
+            <g data-e="7"><path class="tf-res" d="M240,316.0 H254 V346" marker-end="url(#ehr)"/><rect class="tf-lin" x="254" y="348" width="122" height="38" rx="8"/><text class="tf-sm" x="315" y="364">mean-pool → Linear</text><text class="tf-sm" x="315" y="378">“is it a kolam?”</text></g>
+          </svg>
           <div class="tf-step tf-img" data-s="0 3"><div class="tf-tokens" id="tfImg"></div>
             <small><b>576 image tokens</b>a 24 × 24 grid: each patch of the photo is now a list of 256 numbers</small></div>
+          <small class="tf-head tf-inset">inside every residual block</small>
+          <svg class="tf-svg tf-block1" viewBox="0 0 380 64" role="img" aria-label="inside one residual block"><path class="tf-wire" d="M2,44 H14"/><path class="tf-wire" d="M14,44 H25" marker-end="url(#eh)"/><rect class="tf-conv" x="26" y="32" width="58" height="24" rx="6"/><text class="tf-sm" x="55.0" y="48">Conv 3×3</text><path class="tf-wire" d="M86,44 H97" marker-end="url(#eh)"/><rect class="tf-norm" x="98" y="32" width="58" height="24" rx="6"/><text class="tf-sm" x="127.0" y="48">BN · ReLU</text><path class="tf-wire" d="M158,44 H169" marker-end="url(#eh)"/><rect class="tf-conv" x="170" y="32" width="58" height="24" rx="6"/><text class="tf-sm" x="199.0" y="48">Conv 3×3</text><path class="tf-wire" d="M230,44 H241" marker-end="url(#eh)"/><rect class="tf-norm" x="242" y="32" width="58" height="24" rx="6"/><text class="tf-sm" x="271.0" y="48">BN</text><path class="tf-wire" d="M302,44 H311" marker-end="url(#eh)"/><circle class="tf-add" cx="322" cy="44" r="10"/><text class="tf-o" x="322" y="49">+</text><path class="tf-res" d="M14,44 V16 H322 V33" marker-end="url(#ehr)"/><text class="tf-side" x="114.0" y="11">skip: the input, added back</text><path class="tf-wire" d="M332,44 H344" marker-end="url(#eh)"/><text class="tf-sm" x="362" y="48">ReLU</text></svg>
         </div>
         <div class="tf-col">
           <div class="tf-tag">the writer · once per digit</div>
@@ -153,7 +178,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <p>This is the real model reading the photo, step by step: each digit it wrote, how sure it was, and
          where on the photo it looked while writing it. Step through it, or press play.</p>
       <div class="wr">
-        <figure class="wr-pane"><div class="wr-photo"><img src="./examples/kolam_1.jpg" alt="the photo being read"><canvas id="wrLook"></canvas></div>
+        <figure class="wr-pane"><div class="wr-photo"><img class="tf-src" alt="the photo being read"><canvas id="wrLook"></canvas></div>
           <figcaption>where it looks<small>bright: the patches it attends to most</small></figcaption></figure>
         <figure class="wr-pane"><div class="rd-frame"><canvas id="wrBoard" class="board"></canvas></div>
           <figcaption>the kolam so far<small>drawn as each row of dots is finished</small></figcaption></figure>
@@ -338,7 +363,7 @@ $('looks').innerHTML = [1, 2, 3, 4, 5, 6].map((n) => `<img src="./how/look_${n}.
 // 4 + 5 · the model reading example 1 for real (public/how/decode.json, scripts/how_assets.py): every token it
 // wrote, its 11 scores, the ones the kolam rules allowed, and where it looked (cross-attention, 0-255 per patch)
 type Step = { tok: number; p: number[]; l: number[]; ok: number[]; look: string }
-type Decode = { grid: [number, number]; encoding: string[]; steps: Step[] }
+type Decode = { photo: string; grid: [number, number]; encoding: string[]; exact: boolean; steps: Step[] }
 const TOKS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '|', '■']
 const BAR = 9
 const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -356,16 +381,36 @@ function written(t: number): { rows: string[]; open: string } {
   return { rows, open }
 }
 
+/** The exact chances of step `st` (softmax of its raw scores). */
+function chances(st: Step): number[] {
+  const m = Math.max(...st.l)
+  const e = st.l.map((v) => Math.exp(v - m))
+  const z = e.reduce((a, b) => a + b, 0)
+  return e.map((v) => v / z)
+}
+/** A chance as a person would write it: 95.39%, 99.987%, 0.04%; never a rounded-up 100%. */
+function pct(p: number): string {
+  if (p < 0.0001) return '<0.01%'
+  const d = p > 0.9999 ? 4 : p > 0.999 ? 3 : 2
+  return `${Math.min(100 * p, 100 - 10 ** -d).toFixed(d)}%`
+}
+/** "95.39% sure · next best: | at 4.60%" */
+function sureOf(st: Step): string {
+  const p = chances(st)
+  const next = p.map((v, j) => [v, j]).filter(([, j]) => j !== st.tok).sort((a, b) => b[0] - a[0])[0]
+  return `${pct(p[st.tok])} sure · next best: <b>${TOKS[next[1]]}</b> at ${pct(next[0])}`
+}
+
 /** Step `st` as 11 bars: its chances (softmax), or with `raw` its raw scores (logits, lowest to highest);
  *  with `rules`, the tokens the kolam rules forbid are struck out and the one written is lit. */
 function bars(el: HTMLElement, st: Step | undefined, rules: boolean, raw = false): void {
   const [lo, hi] = st ? [Math.min(...st.l), Math.max(...st.l)] : [0, 1]
   el.innerHTML = TOKS.map((t, j) => {
-    const p = st ? st.p[j] : 0
+    const p = st ? chances(st)[j] : 0
     const h = !st ? 0 : raw ? 0.08 + 0.92 * (st.l[j] - lo) / (hi - lo || 1) : p
     const no = rules && st && !st.ok.includes(j) ? ' no' : ''
     const win = rules && st && st.tok === j ? ' win' : ''
-    const say = raw ? st?.l[j].toFixed(1) : p >= 0.995 ? '100%' : p >= 0.01 ? `${Math.round(p * 100)}%` : ''
+    const say = raw ? st?.l[j].toFixed(1) : pct(p)
     return `<div class="hw-bar${no}${win}"><span style="height:${Math.max(2, h * 100)}%"></span>` +
       (raw ? `<b>${t}</b><i>${say ?? ''}</i>` : `<em>${win ? say : ''}</em><b>${t}</b>`) + '</div>'
   }).join('')
@@ -392,11 +437,44 @@ function lookAt(cv: HTMLCanvasElement, t: number): void {
 }
 
 // 4 · the transformer: a light walks through the stages, one pass per digit, with the real tokens and scores
-const tfSteps = [...document.querySelectorAll<HTMLElement>('#tf [data-s]')]
-let stage = 0, pass = 0
+const tfSteps = [...document.querySelectorAll<HTMLElement>('#tf [data-s], #tf [data-e]')]
+const PARTS = 9 // the eyes' parts (data-e 0-8), lit one after another when a photo comes in
+const PASSES = 12 // the writer's first 12 digits, then a new photo
+let stage = 0, pass = 0, sub = -1
+
+/** Is `el` lit now? Stage 0 (a new photo) walks the eyes: the photo, each part in turn, then the tokens. */
+function lit(el: HTMLElement): boolean {
+  if (calm) return true
+  if (el.dataset.e !== undefined) return stage === 0 && +el.dataset.e === sub
+  const ss = el.dataset.s!.split(' ')
+  if (stage === 0 && ss.includes('0')) return el.classList.contains('tf-img') ? sub >= PARTS : sub < 0
+  return ss.includes(String(stage))
+}
+
+/** The wire from the eyes to the writer: the 576 image tokens into cross-attention's K, V. Side by side it
+ *  curves across; stacked (phones) it runs down the left edge. It flows while cross-attention reads it. */
+function tfLink(): void {
+  const box = $('tf').getBoundingClientRect()
+  const a = $('tfImg').getBoundingClientRect()
+  const b = document.querySelector('#tf .tf-kv')!.getBoundingClientRect()
+  const [ex, ey] = [b.left - box.left, b.top + b.height / 2 - box.top]
+  let d: string
+  if (a.right < b.left) {
+    const [sx, sy] = [a.right - box.left + 4, a.top + a.height / 2 - box.top]
+    d = `M${sx},${sy} C${sx + 70},${sy} ${ex - 70},${ey} ${ex},${ey}`
+  } else {
+    const card = $('tfImg').closest('.tf-col')!.getBoundingClientRect() // below the whole eyes card
+    const [sx, sy] = [a.left + a.width / 2 - box.left, card.bottom - box.top]
+    d = `M${sx},${a.bottom - box.top + 2} M${sx},${sy} V${sy + 9} H5 V${ey} H${ex}`
+  }
+  $('tfLink').setAttribute('d', d)
+  $('tfLink').classList.toggle('hot', stage === 3)
+}
+
 function tfShow(): void {
   if (!dec) return
-  tfSteps.forEach((el) => el.classList.toggle('lit', calm || el.dataset.s!.split(' ').includes(String(stage))))
+  tfLink()
+  tfSteps.forEach((el) => el.classList.toggle('lit', lit(el)))
   const st = dec.steps[pass]
   // the tokens it reads: BOS, then the digits so far (the last 9 of them)
   const so = ['▸', ...dec.steps.slice(0, pass).map((x) => TOKS[x.tok])]
@@ -409,17 +487,22 @@ function tfShow(): void {
     cell.classList.toggle('hot', stage === 3 && looks[pass][n] > 100)
   })
   bars($('tfBars'), stage >= 5 ? st : undefined, stage >= 6, true)
-  const sure = st.p[st.tok] >= 0.9995 ? 'over 99.9%' : `${(st.p[st.tok] * 100).toFixed(1)}%`
   $('tfPick').innerHTML = stage >= 6
-    ? `writes <b>${TOKS[st.tok]}</b>: the best score the rules allow (after softmax: ${sure} likely)`
+    ? `writes <b>${TOKS[st.tok]}</b>, the best score the rules allow: ${sureOf(st)}`
     : '&nbsp;'
 }
 function tfTick(): void {
   if (!dec) return
+  if (stage === 0 && sub < PARTS) {
+    sub++
+    tfShow()
+    return void setTimeout(tfTick, 600)
+  }
   stage++
   if (stage > 7) {
-    pass = (pass + 1) % dec.steps.length
-    stage = pass ? 1 : 0 // back to the first digit: a new photo, the eyes look once
+    pass = (pass + 1) % Math.min(PASSES, dec.steps.length)
+    if (pass === 0) ((stage = 0), (sub = -1)) // a new photo: the eyes look once
+    else stage = 1
   }
   tfShow()
   setTimeout(tfTick, stage === 3 ? 1900 : 850) // a longer look at where it looks
@@ -464,15 +547,14 @@ function wrShow(): void {
     return d === undefined ? '<span class="todo">·</span>' : `<span class="d${d}${on}">${d}</span>`
   }).join('')}</div>`).join('')
   lookAt($<HTMLCanvasElement>('wrLook'), t)
-  bars($('wrBars'), st, true)
-  const sure = st ? (st.p[st.tok] >= 0.995 ? 'over 99%' : `${Math.round(st.p[st.tok] * 100)}%`) : ''
+  bars($('wrBars'), st, true, true)
   $('wrSay').innerHTML = !st
     ? `Press <b>play</b>, or step through the ${N} steps one by one.`
-    : st.tok === 10
-      ? `Step ${t} of ${N}: <b>■</b>, the kolam is complete (${sure} sure). Every digit matches the real kolam.`
+    : `Step ${t} of ${N}: ` + (st.tok === 10
+      ? `<b>■</b>, the kolam is complete.${dec.exact ? ' Every digit matches the real kolam.' : ''}`
       : st.tok === BAR
-        ? `Step ${t} of ${N}: <b>|</b>, the end of digit row ${rows.length} (${sure} sure).`
-        : `Step ${t} of ${N}: wrote <b>${TOKS[st.tok]}</b>, a ${named(st.tok, rows.length)}, ${sure} sure.`
+        ? `<b>|</b>, the end of digit row ${rows.length}.`
+        : `wrote <b>${TOKS[st.tok]}</b>, a ${named(st.tok, rows.length)}.`) + `<br><small>${sureOf(st)}</small>`
   const slider = $<HTMLInputElement>('wrStep')
   slider.max = String(N)
   slider.value = String(t)
@@ -499,14 +581,16 @@ $('wrBack').onclick = () => (stop(), wrGo(t - 1))
 $('wrReset').onclick = () => (stop(), wrGo(0))
 $<HTMLInputElement>('wrStep').oninput = (e) => (stop(), wrGo(+(e.target as HTMLInputElement).value))
 
+window.addEventListener('resize', () => dec && tfLink())
 fetch('./how/decode.json').then((r) => r.json()).then((d: Decode) => {
   dec = d
+  document.querySelectorAll<HTMLImageElement>('img.tf-src').forEach((im) => (im.src = d.photo))
   looks = d.steps.map((st) => Uint8Array.from(atob(st.look), (ch) => ch.charCodeAt(0)))
   // the image tokens: the photo cut into its grid of patches, one tile per token
   const [gh, gw] = d.grid
   $('tfImg').style.gridTemplateColumns = `repeat(${gw}, 1fr)`
   $('tfImg').innerHTML = Array.from({ length: gh * gw }, (_, n) =>
-    `<i style="background-image:url(./examples/kolam_1.jpg);background-position:${((n % gw) / (gw - 1)) * 100}% ${(Math.floor(n / gw) / (gh - 1)) * 100}%;background-size:${gw * 100}% ${gh * 100}%"></i>`).join('')
+    `<i style="background-image:url(${d.photo});background-position:${((n % gw) / (gw - 1)) * 100}% ${(Math.floor(n / gw) / (gh - 1)) * 100}%;background-size:${gw * 100}% ${gh * 100}%"></i>`).join('')
   tfShow()
   if (!calm) setTimeout(tfTick, 850)
   wrShow()

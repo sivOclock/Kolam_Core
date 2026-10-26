@@ -401,7 +401,14 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .hw-resnet span:nth-child(2) { width: 52px; height: 84px; }
 .hw-resnet span:nth-child(3) { width: 44px; height: 60px; color: var(--yellow); }
 /* 4 · the transformer: two columns (eyes, writer); a light walks through the stages, one pass per digit */
-.tf { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.tf { display: grid; grid-template-columns: 1fr; gap: 18px; position: relative; }
+/* the wire from the eyes to the writer's cross-attention: always flowing a little, bright while it is read */
+.tf-link { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 2; }
+.tf-link path { fill: none; stroke: var(--yellow); stroke-width: 2; stroke-dasharray: 5 9; opacity: .35;
+                animation: tf-flow 1.6s linear infinite; transition: opacity .3s, stroke-width .3s; }
+.tf-link path.hot { opacity: 1; stroke-width: 3; animation-duration: .5s; filter: drop-shadow(0 0 4px rgba(250,204,21,.8)); }
+@keyframes tf-flow { to { stroke-dashoffset: -28; } }
+@media (prefers-reduced-motion: reduce) { .tf-link path { animation: none; } }
 .tf-col { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--bg-card); border-radius: 12px; padding: 12px; }
 .tf-tag { align-self: stretch; text-align: center; font: 600 12px system-ui, sans-serif; letter-spacing: .05em; text-transform: uppercase;
           color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--bg-panel); margin-bottom: 4px; }
@@ -450,7 +457,15 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .tf-emb { fill: #3b1d26; stroke: #FB7185; } .tf-att { fill: #3d2a12; stroke: #F59E0B; } .tf-norm { fill: #36310f; stroke: #FACC15; }
 .tf-ff { fill: #10303a; stroke: #22D3EE; } .tf-lin { fill: #2a1f3d; stroke: #A78BFA; } .tf-add { fill: #0B1F1B; stroke: #9CA3AF; }
 .tf-svg rect, .tf-svg circle { stroke-width: 1.5; transition: stroke-width .25s, filter .25s; }
-.tf-svg g.lit rect, .tf-svg g.lit circle { stroke-width: 3; filter: drop-shadow(0 0 6px rgba(250,204,21,.55)); }
+.tf-svg g.lit rect, .tf-svg g.lit circle { stroke: var(--yellow); stroke-width: 3; filter: drop-shadow(0 0 7px rgba(250,204,21,.7)); }
+.tf-svg g.lit .tf-att { fill: #6b4712; } .tf-svg g.lit .tf-ff { fill: #145466; } .tf-svg g.lit .tf-emb { fill: #6a2a3b; }
+.tf-svg g.lit .tf-lin { fill: #46326b; } .tf-svg g.lit .tf-norm { fill: #5c5112; }
+.tf-conv { fill: #0f332f; stroke: #2DD4BF; } .tf-back { opacity: .45; } .tf-map { fill: #2DD4BF; opacity: .55; }
+.tf-svg g.lit .tf-conv { fill: #17544d; } .tf-svg g.lit .tf-map { opacity: 1; }
+.tf-head { color: var(--muted); font-size: 12.5px; line-height: 1.35; text-align: center; max-width: 36ch; }
+.tf-head b { display: block; color: var(--chalk); font-size: 14.5px; }
+.tf-inset { margin-top: 6px; }
+.tf-enc { max-width: 380px; } .tf-block1 { max-width: 380px; }
 .tf-pick { min-height: 1.4em; color: var(--text); font-size: 13.5px; }
 .tf-pick b { color: var(--yellow); font: 700 16px ui-monospace, monospace; }
 /* 11 scores, shared by 4 and 5: struck out = the kolam rules forbid it; lit = the one written */
@@ -488,6 +503,8 @@ body.reader { height: auto; min-height: 100vh; overflow: auto; background: var(-
 .wr-grid span.on { border-color: var(--yellow); }
 .wr-bars { align-self: center; margin-top: 14px; }
 .wr-say { text-align: center; align-self: center; min-height: 3em; }
+.wr-say small { color: var(--muted); font-size: 13px; }
+.wr-say small b { color: var(--text); font-family: ui-monospace, monospace; }
 .wr-ctl { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
 .wr-ctl .rd-btn { min-height: 40px; min-width: 48px; font-size: 15px; }
 .wr-ctl input { flex: 1 1 100%; max-width: 420px; accent-color: var(--yellow); }

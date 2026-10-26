@@ -4,7 +4,7 @@
                  where it looked on the photo (the last decoder layer's cross-attention, averaged over its
                  heads, as 0-255 per image token)
   training.json  its training record: loss along the way and the held-out exact readings
-usage: PYTHONPATH=. python scripts/how_assets.py runs/night_AM2/best_head.pt runs/night_AM2/log.jsonl"""
+usage: PYTHONPATH=. python scripts/how_assets.py runs/night_AM2/best_head.pt runs/night_AM2/log.jsonl [kolam_1.jpg]"""
 import base64
 import json
 import math
@@ -20,7 +20,7 @@ from kolam_feed.model import TOK, BOS
 from kolam_feed.train import load, prepare
 
 OUT = Path("kolam_studio/public/how")
-EXAMPLE = "kolam_1.jpg"
+EXAMPLE = sys.argv[3] if len(sys.argv) > 3 else "kolam_1.jpg"
 
 
 def attend(mha, q, kv, mask=None):
