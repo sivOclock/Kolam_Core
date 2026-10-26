@@ -87,30 +87,92 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 
     <section class="hw-sec">
       <h2><span>4</span> The model that reads</h2>
-      <p>Two networks, one after the other: a <b>ResNet</b> looks at the photo, and a <b>transformer
-         decoder</b> writes the digits.</p>
-      <div class="hw-arch">
-        <figure class="hw-stage"><img src="./how/look_4.jpg" alt="a kolam photo"><figcaption><b>photo</b>
-          <small>shrunk to a 192 × 192 square</small></figcaption></figure>
-        <i class="hw-arrow">→</i>
-        <figure class="hw-stage"><div class="hw-resnet"><span>edges</span><span>curves</span><span>dots &amp; gates</span></div>
-          <figcaption><b>ResNet</b><small>the eyes: each layer sees a bigger patch, from strokes up to whole gates</small></figcaption></figure>
-        <i class="hw-arrow">→</i>
-        <figure class="hw-stage"><div class="hw-fmap" id="fmap"></div>
-          <figcaption><b>a 12 × 12 map</b><small>what is where in the picture</small></figcaption></figure>
-        <i class="hw-arrow">→</i>
-        <figure class="hw-stage"><div class="hw-writer"><code id="typing"></code>
-          <div class="hw-rule"><small>at the top edge, only these fit:</small><div id="rule"></div></div></div>
-          <figcaption><b>transformer decoder</b><small>the writer: one digit at a time, looking back at the map
-          and at what it has written; rules let through only digits that still make a kolam</small></figcaption></figure>
-        <i class="hw-arrow">→</i>
-        <figure class="hw-stage"><div class="rd-frame hw-mini"><canvas id="mini" class="board"></canvas></div>
-          <figcaption><b>kolam</b><small>the digits, drawn back</small></figcaption></figure>
+      <p>An AI chatbot writes its reply one word at a time. Kolam Core works the same way, one digit at a
+         time. It has two parts: the <b>eyes</b> (a ResNet) turn the photo into 576 small pieces, and the
+         <b>writer</b> (a transformer decoder, the same kind of block that is stacked inside an LLM) writes
+         the digits, looking at the photo and at what it has already written. The writer is drawn here the way
+         the transformer paper draws it, bottom to top, with this model’s real sizes.</p>
+      <div class="tf" id="tf">
+        <div class="tf-col">
+          <div class="tf-tag">the eyes · once per photo</div>
+          <div class="tf-step" data-s="0"><div class="tf-photo"><img src="./examples/kolam_1.jpg" alt="a kolam photo"><i></i></div>
+            <small><b>photo</b>384 × 384 pixels</small></div>
+          <i class="tf-down" aria-hidden="true">↓</i>
+          <div class="tf-step" data-s="0"><div class="hw-resnet"><span>edges</span><span>curves</span><span>dots &amp; gates</span></div>
+            <small><b>ResNet-34</b>layers of filters, each one seeing a bigger patch of the photo</small></div>
+          <i class="tf-down" aria-hidden="true">↓</i>
+          <div class="tf-step tf-img" data-s="0 3"><div class="tf-tokens" id="tfImg"></div>
+            <small><b>576 image tokens</b>a 24 × 24 grid: each patch of the photo is now a list of 256 numbers</small></div>
+        </div>
+        <div class="tf-col">
+          <div class="tf-tag">the writer · once per digit</div>
+          <div class="tf-step" data-s="6"><div class="tf-pick" id="tfPick"></div></div>
+          <div class="tf-step" data-s="5 6"><div class="hw-bars" id="tfBars"></div>
+            <small><b>11 scores</b>the raw score (logit) for each token: 0–8, “|” ends a row, ■ ends the kolam.
+            Softmax turns them into chances; the kolam rules strike out tokens that can’t make a kolam</small></div>
+          <svg class="tf-svg" viewBox="0 72 440 588" role="img" aria-label="the transformer decoder, drawn as in the paper, with this model's sizes">
+            <defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#9CA3AF"/></marker>
+              <marker id="ahr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#5d7a72"/></marker>
+              <marker id="ahk" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#FACC15"/></marker></defs>
+            <rect class="tf-n" x="96" y="182" width="290" height="376" rx="14"/><text class="tf-nx" x="410" y="376.0">× 4</text>
+            <path class="tf-res" d="M230,558.0 H356 V450.0 H242.0" marker-end="url(#ahr)"/>
+            <path class="tf-res" d="M230,432.0 H356 V324.0 H242.0" marker-end="url(#ahr)"/>
+            <path class="tf-res" d="M230,306.0 H356 V200.0 H242.0" marker-end="url(#ahr)"/>
+            <path class="tf-wire" d="M230,604 V589" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,566 V551" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,530 V515" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,476 V461" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,440 V425" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,404 V389" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,350 V335" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,314 V299" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,278 V263" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,226 V211" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,190 V175" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,154 V139" marker-end="url(#ah)"/>
+            <path class="tf-wire" d="M230,104 V78" marker-end="url(#ah)"/>
+            <g data-s="1"><rect class="tf-emb" x="120" y="604.0" width="220" height="36" rx="8"/><text x="230" y="619.0">digit + row + column embeddings</text><text class="tf-sm" x="230" y="633.0">added up: 256 numbers per token</text><circle class="tf-add" cx="230" cy="577.0" r="11.0"/><text class="tf-o" x="230" y="582.0">+</text></g>
+            <g data-s="2"><rect class="tf-norm" x="150" y="530" width="160" height="20" rx="5"/><text class="tf-sm" x="230" y="545.0">Norm</text><rect class="tf-att" x="120" y="476" width="220" height="38" rx="8"/><text x="230" y="492.0">Masked Multi-Head</text><text class="tf-sm" x="230" y="507.0">Self-Attention · 8 heads</text><circle class="tf-add" cx="230" cy="450.0" r="10.0"/><text class="tf-o" x="230" y="455.0">+</text><text class="tf-side" x="104" y="472" text-anchor="start">Q K V: the digits so far</text></g>
+            <g data-s="3"><rect class="tf-norm" x="150" y="404" width="160" height="20" rx="5"/><text class="tf-sm" x="230" y="419.0">Norm</text><rect class="tf-att" x="120" y="350" width="220" height="38" rx="8"/><text x="230" y="366.0">Multi-Head Cross-Attention</text><text class="tf-sm" x="230" y="381.0">8 heads</text><circle class="tf-add" cx="230" cy="324.0" r="10.0"/><text class="tf-o" x="230" y="329.0">+</text><path class="tf-kv" d="M4,369.0 H118" marker-end="url(#ahk)"/><text class="tf-side tf-kvt" x="6" y="361.0" text-anchor="start">K V: 576 image</text><text class="tf-side tf-kvt" x="6" y="385.0" text-anchor="start">tokens (the eyes)</text></g>
+            <g data-s="4"><rect class="tf-norm" x="150" y="278" width="160" height="20" rx="5"/><text class="tf-sm" x="230" y="293.0">Norm</text><rect class="tf-ff" x="120" y="226" width="220" height="36" rx="8"/><text x="230" y="241.0">Feed Forward</text><text class="tf-sm" x="230" y="256.0">256 → 1024 → 256</text><circle class="tf-add" cx="230" cy="200.0" r="10.0"/><text class="tf-o" x="230" y="205.0">+</text></g>
+            <g data-s="5"><rect class="tf-norm" x="150" y="154" width="160" height="20" rx="5"/><text class="tf-sm" x="230" y="169.0">Norm</text><rect class="tf-lin" x="120" y="104" width="220" height="34" rx="8"/><text x="230" y="118.0">Linear</text><text class="tf-sm" x="230" y="133.0">256 → 11 scores</text></g>
+          </svg>
+          <p class="tf-note">dashed lines: residual connections, each part adds its result to what came in</p>
+          <div class="tf-step" data-s="1"><div class="tf-chips" id="tfChips"></div>
+            <small><b>the digits so far, as tokens</b>it starts from ▸ and reads its own answer so far</small></div>
+          <div class="tf-loop" data-s="7">↻ the token it wrote joins the inputs at the bottom; all 4 blocks run again for the next one</div>
+        </div>
+      </div>
+      <p>That loop is the whole of the reading: 72 passes for this 5 × 5 kolam, about 300 for a 12 × 12 one.
+         Each pass runs the 4 blocks over every digit written so far, so the browser keeps the work small by
+         sending only those digits, never empty space.</p>
+    </section>
+
+    <section class="hw-sec">
+      <h2><span>5</span> Watch it write</h2>
+      <p>This is the real model reading the photo, step by step: each digit it wrote, how sure it was, and
+         where on the photo it looked while writing it. Step through it, or press play.</p>
+      <div class="wr">
+        <figure class="wr-pane"><div class="wr-photo"><img src="./examples/kolam_1.jpg" alt="the photo being read"><canvas id="wrLook"></canvas></div>
+          <figcaption>where it looks<small>bright: the patches it attends to most</small></figcaption></figure>
+        <figure class="wr-pane"><div class="rd-frame"><canvas id="wrBoard" class="board"></canvas></div>
+          <figcaption>the kolam so far<small>drawn as each row of dots is finished</small></figcaption></figure>
+        <figure class="wr-pane"><div class="hw-grid wr-grid" id="wrGrid"></div>
+          <figcaption>the digits<small>written left to right, row by row</small></figcaption></figure>
+      </div>
+      <div class="hw-bars wr-bars" id="wrBars"></div>
+      <p class="wr-say" id="wrSay"></p>
+      <div class="wr-ctl">
+        <button class="rd-btn" id="wrReset" aria-label="back to the start">⏮</button>
+        <button class="rd-btn" id="wrBack" aria-label="one step back">◀</button>
+        <button class="rd-btn primary" id="wrPlay">▶ Play</button>
+        <button class="rd-btn" id="wrNext" aria-label="one step forward">▶|</button>
+        <input type="range" id="wrStep" min="0" max="1" value="0" aria-label="step">
       </div>
     </section>
 
     <section class="hw-sec">
-      <h2><span>5</span> How it learned</h2>
+      <h2><span>6</span> How it learned</h2>
       <div class="hw-train">
         <div class="hw-loop" aria-label="the training loop">
           <div><b>1</b> a generated photo, with its true digits</div>
@@ -123,13 +185,13 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
           aria-label="training: mistakes fall while exact readings rise"></svg>
           <figcaption id="chartcap"></figcaption></figure>
       </div>
-      <p>This is the real record of the model on the first page. The yellow line is how wrong its guesses
-         were; the green dots are how many kolams it had <b>never seen</b> it read exactly, checked along
-         the way. A bigger model is now practising on millions of photos and kolams up to 20 × 20 dots.</p>
+      <p>This is the real training record of the model on the first page: one night on a gaming laptop's
+         GPU, 2.4 million photos. The yellow line is how wrong its guesses were; the green dots are how many
+         kolams it had <b>never seen</b> it read exactly, checked along the way.</p>
     </section>
 
     <section class="hw-sec">
-      <h2><span>6</span> All inside Chrome</h2>
+      <h2><span>7</span> All inside Chrome</h2>
       <div class="hw-chrome">
         <div><span class="hw-icon">⬇</span><b>once</b><small>the model downloads to your browser the first time</small></div>
         <i class="hw-arrow">→</i>
@@ -273,54 +335,215 @@ $('systems').innerHTML = SYSTEMS.map(([s, says]) => `<figure><img src="./how/sys
   <figcaption><b>${s === 'wfc' ? 'tiles' : s}</b><small>${says}</small></figcaption></figure>`).join('')
 $('looks').innerHTML = [1, 2, 3, 4, 5, 6].map((n) => `<img src="./how/look_${n}.jpg" alt="the same kolam, look ${n}" loading="lazy">`).join('')
 
-// 4 · the model: a lit-up feature map, the writer typing the digits, the rule at the top edge
-$('fmap').innerHTML = Array.from({ length: 144 }, (_, n) => {
-  const [r, c] = [Math.floor(n / 12), n % 12]
-  const on = r > 1 && r < 10 && c > 1 && c < 10 && (r + c) % 2 === 0
-  return `<i style="opacity:${on ? 0.55 + 0.45 * Math.abs(Math.sin(n)) : 0.08 + 0.1 * Math.abs(Math.cos(n))}"></i>`
-}).join('')
-$('rule').innerHTML = [...'012345678'].map((d) => `<b class="${'0678'.includes(d) ? 'ok' : ''}">${d}</b>`).join('')
-const mini = new Board($<HTMLCanvasElement>('mini'), '')
-const typing = $('typing')
+// 4 + 5 · the model reading example 1 for real (public/how/decode.json, scripts/how_assets.py): every token it
+// wrote, its 11 scores, the ones the kolam rules allowed, and where it looked (cross-attention, 0-255 per patch)
+type Step = { tok: number; p: number[]; l: number[]; ok: number[]; look: string }
+type Decode = { grid: [number, number]; encoding: string[]; steps: Step[] }
+const TOKS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '|', '■']
+const BAR = 9
 const calm = matchMedia('(prefers-reduced-motion: reduce)').matches
-let typed = 0
-const text = START.join('\n')
-function type(): void {
-  if (calm) return void (typing.textContent = text)
-  typed = typed >= text.length + 24 ? 0 : typed + 1 // a short rest at the end, then again
-  typing.textContent = text.slice(0, Math.min(typed, text.length)) + (typed < text.length ? '▍' : '')
-}
-setInterval(type, 140)
+let dec: Decode | null = null
+let looks: Uint8Array[] = []
 
-// 5 · the real training record of the served model
+/** The digit rows written in the first t steps (a row counts once its "|" is written), and the row being written. */
+function written(t: number): { rows: string[]; open: string } {
+  const rows: string[] = []
+  let open = ''
+  for (const st of dec!.steps.slice(0, t)) {
+    if (st.tok === BAR) (rows.push(open), (open = ''))
+    else if (st.tok < BAR) open += TOKS[st.tok]
+  }
+  return { rows, open }
+}
+
+/** Step `st` as 11 bars: its chances (softmax), or with `raw` its raw scores (logits, lowest to highest);
+ *  with `rules`, the tokens the kolam rules forbid are struck out and the one written is lit. */
+function bars(el: HTMLElement, st: Step | undefined, rules: boolean, raw = false): void {
+  const [lo, hi] = st ? [Math.min(...st.l), Math.max(...st.l)] : [0, 1]
+  el.innerHTML = TOKS.map((t, j) => {
+    const p = st ? st.p[j] : 0
+    const h = !st ? 0 : raw ? 0.08 + 0.92 * (st.l[j] - lo) / (hi - lo || 1) : p
+    const no = rules && st && !st.ok.includes(j) ? ' no' : ''
+    const win = rules && st && st.tok === j ? ' win' : ''
+    const say = raw ? st?.l[j].toFixed(1) : p >= 0.995 ? '100%' : p >= 0.01 ? `${Math.round(p * 100)}%` : ''
+    return `<div class="hw-bar${no}${win}"><span style="height:${Math.max(2, h * 100)}%"></span>` +
+      (raw ? `<b>${t}</b><i>${say ?? ''}</i>` : `<em>${win ? say : ''}</em><b>${t}</b>`) + '</div>'
+  }).join('')
+}
+
+/** Where step `st` looked, on a canvas over the photo: the patches it attended to glow, the rest dims. */
+function lookAt(cv: HTMLCanvasElement, t: number): void {
+  const [gh, gw] = dec!.grid
+  const r = cv.getBoundingClientRect()
+  const dpr = devicePixelRatio || 1
+  ;[cv.width, cv.height] = [Math.round(r.width * dpr), Math.round(r.height * dpr)]
+  const c = cv.getContext('2d')!
+  c.clearRect(0, 0, cv.width, cv.height)
+  if (!t) return
+  const a = looks[t - 1]
+  const [w, h] = [cv.width / gw, cv.height / gh]
+  for (let n = 0; n < gh * gw; n++) {
+    const v = a[n] / 255
+    const [x, y] = [(n % gw) * w, Math.floor(n / gw) * h]
+    c.fillStyle = `rgba(11,31,27,${0.62 * (1 - Math.sqrt(v))})`
+    c.fillRect(x, y, w + 0.5, h + 0.5)
+    if (v > 0.08) ((c.fillStyle = `rgba(250,204,21,${0.85 * v})`), c.fillRect(x, y, w + 0.5, h + 0.5))
+  }
+}
+
+// 4 · the transformer: a light walks through the stages, one pass per digit, with the real tokens and scores
+const tfSteps = [...document.querySelectorAll<HTMLElement>('#tf [data-s]')]
+let stage = 0, pass = 0
+function tfShow(): void {
+  if (!dec) return
+  tfSteps.forEach((el) => el.classList.toggle('lit', calm || el.dataset.s!.split(' ').includes(String(stage))))
+  const st = dec.steps[pass]
+  // the tokens it reads: BOS, then the digits so far (the last 9 of them)
+  const so = ['▸', ...dec.steps.slice(0, pass).map((x) => TOKS[x.tok])]
+  const shown = so.slice(-10)
+  $('tfChips').innerHTML = (so.length > shown.length ? '<i>…</i>' : '') +
+    shown.map((t, k) => `<i class="d${t}${k === shown.length - 1 && stage >= 1 ? ' new' : ''}">${t}</i>`).join('')
+  $('tfImg').classList.toggle('looking', stage === 3)
+  $('tfImg').querySelectorAll<HTMLElement>('i').forEach((cell, n) => {
+    cell.style.opacity = stage === 3 ? String(0.12 + 0.88 * Math.sqrt(looks[pass][n] / 255)) : ''
+    cell.classList.toggle('hot', stage === 3 && looks[pass][n] > 100)
+  })
+  bars($('tfBars'), stage >= 5 ? st : undefined, stage >= 6, true)
+  const sure = st.p[st.tok] >= 0.9995 ? 'over 99.9%' : `${(st.p[st.tok] * 100).toFixed(1)}%`
+  $('tfPick').innerHTML = stage >= 6
+    ? `writes <b>${TOKS[st.tok]}</b>: the best score the rules allow (after softmax: ${sure} likely)`
+    : '&nbsp;'
+}
+function tfTick(): void {
+  if (!dec) return
+  stage++
+  if (stage > 7) {
+    pass = (pass + 1) % dec.steps.length
+    stage = pass ? 1 : 0 // back to the first digit: a new photo, the eyes look once
+  }
+  tfShow()
+  setTimeout(tfTick, stage === 3 ? 1900 : 850) // a longer look at where it looks
+}
+
+// 5 · watch it write: photo + where it looks, the kolam so far, the digits; step by step
+let t = 0
+let timer = 0
+const wrBoard = new Board($<HTMLCanvasElement>('wrBoard'), '')
+function wrShow(): void {
+  if (!dec) return
+  const N = dec.steps.length
+  const final = dec.encoding
+  const { rows, open } = written(t)
+  const st = t ? dec.steps[t - 1] : undefined
+  // the board: every dot, and the lines of the rows of dots finished so far
+  const h = fromEncoding(final)
+  wrBoard.layout(h.rows, h.cols, 1)
+  wrBoard.clear()
+  wrBoard.dots(CHALK.main, Math.max(2, wrBoard.s * 0.14), new Set(Array.from({ length: h.rows * h.cols }, (_, n) => `${Math.floor(n / h.cols)},${n % h.cols}`)))
+  const done = rows.length % 2 ? rows.length : rows.length - 1
+  if (done >= 3) {
+    const k = compile(fromEncoding(rows.slice(0, done)))
+    const w = Math.max(1.5, wrBoard.s * 0.14)
+    drawn(k).strokes.forEach((P, si) => bezierSegments(wrBoard, P).forEach((seg, i) => wrBoard.chalk(seg, CHALK.main, w, si * 1009 + i * 7 + 1)))
+  }
+  // the gate of the digit just written, ringed
+  const at: [number, number] | null = st && st.tok < BAR ? [rows.length, open.length - 1] : null
+  if (at) {
+    const [x, y] = wrBoard.px(gapAt(at[0], at[1]))
+    const ctx = wrBoard.ctx
+    ctx.strokeStyle = CHALK.highlight
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.arc(x, y, wrBoard.s * 0.55, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+  // the digits: the final shape, filled in as far as written
+  $('wrGrid').innerHTML = final.map((row, i) => `<div class="hw-row ${i % 2 ? 'lr' : 'ud'}">${[...row].map((_, k) => {
+    const d = i < rows.length ? rows[i][k] : i === rows.length ? open[k] : undefined
+    const on = at && at[0] === i && at[1] === k ? ' on' : ''
+    return d === undefined ? '<span class="todo">·</span>' : `<span class="d${d}${on}">${d}</span>`
+  }).join('')}</div>`).join('')
+  lookAt($<HTMLCanvasElement>('wrLook'), t)
+  bars($('wrBars'), st, true)
+  const sure = st ? (st.p[st.tok] >= 0.995 ? 'over 99%' : `${Math.round(st.p[st.tok] * 100)}%`) : ''
+  $('wrSay').innerHTML = !st
+    ? `Press <b>play</b>, or step through the ${N} steps one by one.`
+    : st.tok === 10
+      ? `Step ${t} of ${N}: <b>■</b>, the kolam is complete (${sure} sure). Every digit matches the real kolam.`
+      : st.tok === BAR
+        ? `Step ${t} of ${N}: <b>|</b>, the end of digit row ${rows.length} (${sure} sure).`
+        : `Step ${t} of ${N}: wrote <b>${TOKS[st.tok]}</b>, a ${named(st.tok, rows.length)}, ${sure} sure.`
+  const slider = $<HTMLInputElement>('wrStep')
+  slider.max = String(N)
+  slider.value = String(t)
+  $('wrPlay').textContent = timer ? '❚❚ Pause' : t >= N ? '↺ Again' : '▶ Play'
+}
+function wrGo(to: number): void {
+  if (!dec) return
+  t = Math.max(0, Math.min(dec.steps.length, to))
+  if (t >= dec.steps.length) stop()
+  wrShow()
+}
+function stop(): void {
+  clearInterval(timer)
+  timer = 0
+}
+$('wrPlay').onclick = () => {
+  if (timer) return void (stop(), wrShow())
+  if (t >= dec!.steps.length) t = 0
+  timer = window.setInterval(() => wrGo(t + 1), calm ? 600 : 260)
+  wrGo(t + 1)
+}
+$('wrNext').onclick = () => (stop(), wrGo(t + 1))
+$('wrBack').onclick = () => (stop(), wrGo(t - 1))
+$('wrReset').onclick = () => (stop(), wrGo(0))
+$<HTMLInputElement>('wrStep').oninput = (e) => (stop(), wrGo(+(e.target as HTMLInputElement).value))
+
+fetch('./how/decode.json').then((r) => r.json()).then((d: Decode) => {
+  dec = d
+  looks = d.steps.map((st) => Uint8Array.from(atob(st.look), (ch) => ch.charCodeAt(0)))
+  // the image tokens: the photo cut into its grid of patches, one tile per token
+  const [gh, gw] = d.grid
+  $('tfImg').style.gridTemplateColumns = `repeat(${gw}, 1fr)`
+  $('tfImg').innerHTML = Array.from({ length: gh * gw }, (_, n) =>
+    `<i style="background-image:url(./examples/kolam_1.jpg);background-position:${((n % gw) / (gw - 1)) * 100}% ${(Math.floor(n / gw) / (gh - 1)) * 100}%;background-size:${gw * 100}% ${gh * 100}%"></i>`).join('')
+  tfShow()
+  if (!calm) setTimeout(tfTick, 850)
+  wrShow()
+})
+
+// 6 · the real training record of the served model
 async function chart(): Promise<void> {
   const t: { loss: [number, number][]; val: [number, number, number][]; images_per_step: number } =
     await (await fetch('./how/training.json')).json()
-  const W = 360, H = 220, L = 34, R = 34, T = 14, B = 30
+  const W = 360, H = 220, L = 48, R = 34, T = 14, B = 30
   const xmax = t.loss[t.loss.length - 1][0], lmax = Math.max(...t.loss.map((p) => p[1]))
   const X = (s: number) => L + (s / xmax) * (W - L - R)
-  const YL = (v: number) => T + (1 - v / lmax) * (H - T - B)
+  const YL = (v: number) => T + (1 - Math.sqrt(v / lmax)) * (H - T - B) // square root: the long tail stays visible
   const YA = (v: number) => T + (1 - v) * (H - T - B)
   let g = ''
   for (const f of [0, 0.5, 1]) g += `<line x1="${L}" x2="${W - R}" y1="${YA(f)}" y2="${YA(f)}" class="grid"/>
     <text x="${W - R + 4}" y="${YA(f) + 4}" class="acc">${Math.round(100 * f)}%</text>`
   g += `<path d="${t.loss.map(([s, v], i) => `${i ? 'L' : 'M'}${X(s).toFixed(1)},${YL(v).toFixed(1)}`).join('')}" class="loss"/>`
-  g += t.val.map(([s, e]) => `<circle cx="${X(s)}" cy="${YA(e)}" r="5" class="exact"/>
-    <text x="${X(s)}" y="${YA(e) - 10}" class="acc" text-anchor="middle">${Math.round(100 * e)}%</text>`).join('')
+  const best = t.val.reduce((b, v) => (v[1] > b[1] ? v : b))
+  const said = new Set([t.val[0], best, t.val[t.val.length - 1]]) // labels on the first, the best and the last
+  g += t.val.map((v) => `<circle cx="${X(v[0])}" cy="${YA(v[1])}" r="${t.val.length > 12 ? 3.5 : 5}" class="exact"/>` +
+    (said.has(v) ? `<text x="${X(v[0])}" y="${YA(v[1]) - 9}" class="acc" text-anchor="middle">${Math.round(100 * v[1])}%</text>` : '')).join('')
   const imgs = (s: number) => (s * t.images_per_step).toLocaleString()
   g += `<text x="${L}" y="${H - 8}" class="ax">0</text><text x="${W - R}" y="${H - 8}" class="ax" text-anchor="end">${imgs(xmax)} photos</text>
         <text x="${L - 6}" y="${T + 4}" class="lossl" text-anchor="end">wrong</text>`
   $('chart').innerHTML = g
-  const [first, last] = [t.val[0], t.val[t.val.length - 1]]
+  const first = t.val[0]
   $('chartcap').textContent = `unseen kolams read exactly: ${Math.round(100 * first[1])}% after ${imgs(first[0])} photos, ` +
-    `${Math.round(100 * last[1])}% after ${imgs(last[0])}`
+    `${Math.round(100 * best[1])}% at best, after ${imgs(best[0])}`
 }
 chart()
 
 function drawAll(): void {
   drawGates()
   render()
-  draw(mini, START)
+  wrBoard.invalidateBase()
+  wrShow()
 }
 let resize = 0
 window.addEventListener('resize', () => {
@@ -328,7 +551,6 @@ window.addEventListener('resize', () => {
   resize = window.setTimeout(() => {
     gateBoards.forEach((b) => b.invalidateBase())
     play.invalidateBase()
-    mini.invalidateBase()
     drawAll()
   }, 150)
 })
